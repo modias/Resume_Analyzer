@@ -2,7 +2,6 @@
 
 import { motion } from "framer-motion";
 import { Card, CardContent } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 
 interface StatCardProps {
   label: string;
@@ -24,7 +23,15 @@ export function StatCard({ label, value, color, index }: StatCardProps) {
           <div className="flex items-end gap-2 mb-3">
             <span className="text-3xl font-bold text-foreground">{value}%</span>
           </div>
-          <Progress value={value} className="h-1.5" style={{ "--progress-color": color } as React.CSSProperties} />
+          <div className="relative h-1.5 w-full overflow-hidden rounded-full bg-primary/20">
+            <motion.div
+              className="h-full rounded-full"
+              style={{ backgroundColor: color }}
+              initial={{ width: 0 }}
+              animate={{ width: `${value}%` }}
+              transition={{ duration: 0.8, delay: index * 0.08 + 0.2, ease: "easeOut" }}
+            />
+          </div>
         </CardContent>
       </Card>
     </motion.div>
