@@ -2,6 +2,139 @@
 
 export const matchScore = 63;
 
+// ─── LinkedIn Mentors ─────────────────────────────────────────────────────────
+
+export interface Mentor {
+  id: number;
+  name: string;
+  title: string;
+  company: string;
+  companyColor: string;
+  school: string;
+  mutualConnections: number;
+  isFollowing: boolean;
+  avatar: string; // initials
+  avatarColor: string;
+  linkedinSlug: string;
+  tenure: string;
+  skillOverlap: string[];
+}
+
+export const linkedInConnected = false;
+
+export const mentors: Mentor[] = [
+  {
+    id: 1,
+    name: "Priya Sharma",
+    title: "Senior Data Scientist",
+    company: "Google",
+    companyColor: "#4285F4",
+    school: "UC Berkeley",
+    mutualConnections: 12,
+    isFollowing: true,
+    avatar: "PS",
+    avatarColor: "from-blue-500 to-cyan-400",
+    linkedinSlug: "priya-sharma-ds",
+    tenure: "3 yrs",
+    skillOverlap: ["Python", "SQL", "ML"],
+  },
+  {
+    id: 2,
+    name: "Marcus Chen",
+    title: "ML Engineer",
+    company: "Meta",
+    companyColor: "#0866FF",
+    school: "Stanford",
+    mutualConnections: 8,
+    isFollowing: true,
+    avatar: "MC",
+    avatarColor: "from-indigo-500 to-purple-500",
+    linkedinSlug: "marcus-chen-ml",
+    tenure: "2 yrs",
+    skillOverlap: ["PyTorch", "Python", "Docker"],
+  },
+  {
+    id: 3,
+    name: "Aisha Patel",
+    title: "Data Analyst",
+    company: "Stripe",
+    companyColor: "#635BFF",
+    school: "UC Berkeley",
+    mutualConnections: 5,
+    isFollowing: false,
+    avatar: "AP",
+    avatarColor: "from-violet-500 to-pink-500",
+    linkedinSlug: "aisha-patel-stripe",
+    tenure: "1.5 yrs",
+    skillOverlap: ["SQL", "Tableau", "A/B Testing"],
+  },
+  {
+    id: 4,
+    name: "James Okonkwo",
+    title: "Data Engineer",
+    company: "Amazon",
+    companyColor: "#FF9900",
+    school: "Carnegie Mellon",
+    mutualConnections: 3,
+    isFollowing: true,
+    avatar: "JO",
+    avatarColor: "from-orange-500 to-yellow-400",
+    linkedinSlug: "james-okonkwo-aws",
+    tenure: "4 yrs",
+    skillOverlap: ["Spark", "AWS", "Airflow"],
+  },
+  {
+    id: 5,
+    name: "Sofia Reyes",
+    title: "Research Scientist Intern → FTE",
+    company: "Netflix",
+    companyColor: "#E50914",
+    school: "MIT",
+    mutualConnections: 2,
+    isFollowing: false,
+    avatar: "SR",
+    avatarColor: "from-red-500 to-rose-400",
+    linkedinSlug: "sofia-reyes-netflix",
+    tenure: "8 mo",
+    skillOverlap: ["R", "Statistics", "Python"],
+  },
+  {
+    id: 6,
+    name: "David Kim",
+    title: "Analytics Engineer",
+    company: "Airbnb",
+    companyColor: "#FF5A5F",
+    school: "Georgia Tech",
+    mutualConnections: 6,
+    isFollowing: true,
+    avatar: "DK",
+    avatarColor: "from-pink-500 to-red-400",
+    linkedinSlug: "david-kim-airbnb",
+    tenure: "2.5 yrs",
+    skillOverlap: ["dbt", "SQL", "Python"],
+  },
+];
+
+// ─── Intern Conversion ────────────────────────────────────────────────────────
+
+export const internConversionOverall = 56;
+
+export const internConversionByCompany = [
+  { company: "Google",  rate: 72, headcount: 4000 },
+  { company: "Amazon",  rate: 68, headcount: 8000 },
+  { company: "Meta",    rate: 81, headcount: 2800 },
+  { company: "Stripe",  rate: 74, headcount: 900  },
+  { company: "Airbnb",  rate: 61, headcount: 600  },
+  { company: "Netflix", rate: 45, headcount: 400  },
+];
+
+export const conversionFactors = [
+  { label: "Match Score > 72%",        impact: "+38%", color: "#6366f1" },
+  { label: "Quantified resume bullets", impact: "+24%", color: "#8b5cf6" },
+  { label: "3+ relevant projects",      impact: "+19%", color: "#a78bfa" },
+  { label: "Referral application",      impact: "+31%", color: "#ec4899" },
+];
+
 export const statCards = [
   { label: "Required Skills Coverage", value: 70, color: "#6366f1" },
   { label: "Preferred Skills Coverage", value: 60, color: "#8b5cf6" },
@@ -34,6 +167,89 @@ export const skillGaps = [
     why: "Containerization knowledge signals production readiness and is increasingly expected even for junior/intern roles.",
   },
 ];
+
+export interface SkillBreakdown {
+  skill: string;
+  category: string;
+  marketDemand: number;
+  scoreImpact: number;
+  estimatedHours: number;
+  description: string;
+  roles: string[];
+  relatedSkills: string[];
+  resources: { label: string; type: "Course" | "Docs" | "Project" | "Book" }[];
+}
+
+export const skillBreakdowns: Record<string, SkillBreakdown> = {
+  AWS: {
+    skill: "AWS",
+    category: "Cloud Computing",
+    marketDemand: 78,
+    scoreImpact: 9,
+    estimatedHours: 40,
+    description:
+      "Amazon Web Services is the dominant cloud platform in enterprise tech. Interns are expected to work with core services like S3 (storage), EC2 (compute), Lambda (serverless), and IAM (permissions). AWS knowledge signals production readiness and scales across data, ML, and backend roles.",
+    roles: ["Data Science Intern", "ML Engineer Intern", "Backend Intern", "Data Engineer Intern"],
+    relatedSkills: ["GCP", "Azure", "Terraform", "Docker", "IAM"],
+    resources: [
+      { label: "AWS Cloud Practitioner (free tier)", type: "Course" },
+      { label: "AWS official documentation", type: "Docs" },
+      { label: "Build a serverless pipeline with Lambda + S3", type: "Project" },
+      { label: "Cloud Computing: Concepts, Technology & Architecture", type: "Book" },
+    ],
+  },
+  Tableau: {
+    skill: "Tableau",
+    category: "Data Visualization",
+    marketDemand: 65,
+    scoreImpact: 6,
+    estimatedHours: 20,
+    description:
+      "Tableau is the most requested BI tool across Fortune 500 internship postings. Analysts use it to build interactive dashboards that communicate KPIs to non-technical stakeholders. Even a single polished Tableau project on your portfolio can differentiate you significantly.",
+    roles: ["Data Analyst Intern", "BI Developer Intern", "Marketing Analytics Intern"],
+    relatedSkills: ["PowerBI", "Looker", "SQL", "Excel", "Data Studio"],
+    resources: [
+      { label: "Tableau Public (free)", type: "Course" },
+      { label: "Tableau official training videos", type: "Docs" },
+      { label: "Recreate a real company dashboard from scratch", type: "Project" },
+      { label: "Storytelling with Data — Cole Nussbaumer Knaflic", type: "Book" },
+    ],
+  },
+  Spark: {
+    skill: "Spark",
+    category: "Big Data",
+    marketDemand: 54,
+    scoreImpact: 5,
+    estimatedHours: 35,
+    description:
+      "Apache Spark is the industry standard for distributed data processing. It's essential for large-scale ML pipelines and ETL workloads. Frequently tested in data engineering technical interviews, even for internship-level roles at companies like Airbnb, Databricks, and Amazon.",
+    roles: ["Data Engineer Intern", "ML Engineer Intern", "Analytics Engineering Intern"],
+    relatedSkills: ["Kafka", "Airflow", "Hadoop", "Python", "dbt"],
+    resources: [
+      { label: "Databricks Community Edition (free)", type: "Course" },
+      { label: "Apache Spark official docs", type: "Docs" },
+      { label: "Build a batch ETL pipeline with PySpark", type: "Project" },
+      { label: "Learning Spark — O'Reilly", type: "Book" },
+    ],
+  },
+  Docker: {
+    skill: "Docker",
+    category: "DevOps / MLOps",
+    marketDemand: 60,
+    scoreImpact: 4,
+    estimatedHours: 15,
+    description:
+      "Docker containers are the standard way to package and deploy applications in modern tech stacks. Knowing Docker signals that you can ship reproducible, production-ready code. It's a fast skill to pick up and shows up in job descriptions across data, ML, backend, and fullstack roles.",
+    roles: ["ML Engineer Intern", "Backend Intern", "Data Engineer Intern", "Platform Intern"],
+    relatedSkills: ["Kubernetes", "CI/CD", "GitHub Actions", "AWS ECR", "Terraform"],
+    resources: [
+      { label: "Docker 101 — Play with Docker (free)", type: "Course" },
+      { label: "Docker official documentation", type: "Docs" },
+      { label: "Containerize a Python ML model and deploy it", type: "Project" },
+      { label: "Docker Deep Dive — Nigel Poulton", type: "Book" },
+    ],
+  },
+};
 
 // ─── Analyze ─────────────────────────────────────────────────────────────────
 
