@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2 } from "lucide-react";
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2, Volume2, Loader2 } from "lucide-react";
 import { analyzeResume, type AnalyzeResponse } from "@/lib/api";
+import { speakText, buildAnalysisSummary } from "@/lib/elevenlabs";
 
 export default function AnalyzePage() {
   const [dragging, setDragging] = useState(false);
@@ -20,6 +21,8 @@ export default function AnalyzePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<Set<number>>(new Set());
+  const [speaking, setSpeaking] = useState(false);
+  const [speakError, setSpeakError] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -72,6 +75,20 @@ export default function AnalyzePage() {
       if (next.has(i)) { next.delete(i); } else { next.add(i); }
       return next;
     });
+  };
+
+  const handleSpeak = async () => {
+    if (!result) return;
+    setSpeakError(null);
+    setSpeaking(true);
+    try {
+      const summary = buildAnalysisSummary(result);
+      await speakText(summary);
+    } catch (err) {
+      setSpeakError(err instanceof Error ? err.message : "Could not play audio.");
+    } finally {
+      setSpeaking(false);
+    }
   };
 
   const scoreColor =
@@ -247,8 +264,25 @@ export default function AnalyzePage() {
                   {result.match_score.toFixed(1)}% Match
                 </span>
               </Badge>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={handleSpeak}
+                disabled={speaking}
+                className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10 h-7 px-3"
+              >
+                {speaking ? (
+                  <><Loader2 className="w-3 h-3 animate-spin" /> Speaking…</>
+                ) : (
+                  <><Volume2 className="w-3 h-3" /> Listen</>
+                )}
+              </Button>
               <div className="h-px flex-1 bg-border" />
             </div>
+
+            {speakError && (
+              <p className="text-xs text-red-400 text-center -mt-2">{speakError}</p>
+            )}
 
             {/* Coverage stat cards */}
             <div className="grid grid-cols-3 gap-3">
