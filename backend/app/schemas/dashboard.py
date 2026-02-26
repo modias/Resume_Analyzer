@@ -24,3 +24,6 @@ class DashboardStats(BaseModel):
     skill_gaps: list[SkillGap]
     total_analyses: int
     callback_rate: float
+    job_title: str
+    company: str
+    job_summary: str

@@ -1,7 +1,7 @@
 """
 Resume bullet optimization suggestions.
 
-Primary:  OpenAI GPT-4o (if OPENAI_API_KEY is set)
+Primary:  Google Gemini (if GEMINI_API_KEY is set)
 Fallback: Rule-based rewrites using weak-word detection
 """
 
@@ -52,12 +52,10 @@ def _rule_based_suggestions(resume_text: str, missing_skills: list[str]) -> list
                 reason = f"Replaced weak verb with stronger action verb '{replacement}'."
                 break
 
-        # Nudge to add quantification if no numbers present
         if not re.search(r"\d", improved):
             improved += f", {_IMPACT_TEMPLATES[len(results) % len(_IMPACT_TEMPLATES)]}"
             reason = (reason or "") + " Added quantification placeholder to demonstrate impact."
 
-        # Suggest missing skill injection if relevant
         if missing_skills and len(results) < 2:
             skill = missing_skills[len(results) % len(missing_skills)]
             improved += f" (using {skill})"
@@ -76,7 +74,7 @@ def _rule_based_suggestions(resume_text: str, missing_skills: list[str]) -> list
     return results
 
 
-# ── OpenAI path ───────────────────────────────────────────────────────────────
+# ── Gemini path ───────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """
 You are an expert resume coach specializing in tech internship applications.
@@ -93,8 +91,27 @@ Rules:
 - Add realistic quantification where missing (%, x-fold, throughput numbers)
 - Naturally work in 1-2 of the missing skills where it makes sense
 - Keep bullets under 20 words each
-- Return ONLY the JSON array, no other text.
+- Return ONLY the JSON array, no markdown, no other text.
 """.strip()
+
+
+async def summarize_job_description(jd_text: str) -> str:
+    if not settings.gemini_api_key:
+        return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
+        prompt = (
+            "Summarize the following job description in exactly 2-3 sentences. "
+            "Focus on the role, key responsibilities, and top required skills. "
+            "Be concise and professional. Return only the summary, no labels or extra text.\n\n"
+            f"JOB DESCRIPTION:\n{jd_text[:3000]}"
+        )
+        response = model.generate_content(prompt)
+        return (response.text or "").strip()
+    except Exception:
+        return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
 
 
 async def generate_suggestions(
@@ -102,30 +119,23 @@ async def generate_suggestions(
     jd_text: str,
     missing_skills: list[str],
 ) -> list[dict]:
-    if not settings.openai_api_key:
+    if not settings.gemini_api_key:
         return _rule_based_suggestions(resume_text, missing_skills)
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        import google.generativeai as genai
+        genai.configure(api_key=settings.gemini_api_key)
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
-        user_msg = (
+        prompt = (
+            f"{_SYSTEM_PROMPT}\n\n"
             f"RESUME (first 2000 chars):\n{resume_text[:2000]}\n\n"
             f"JOB DESCRIPTION (first 1000 chars):\n{jd_text[:1000]}\n\n"
             f"MISSING SKILLS: {', '.join(missing_skills[:8])}"
         )
 
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
-                {"role": "user", "content": user_msg},
-            ],
-            temperature=0.7,
-            max_tokens=800,
-        )
-        content = response.choices[0].message.content or "[]"
-        # Strip markdown code fences if present
+        response = model.generate_content(prompt)
+        content = response.text or "[]"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         suggestions = json.loads(content)

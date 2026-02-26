@@ -20,6 +20,8 @@ class Analysis(Base):
     preferred_coverage: Mapped[float] = mapped_column(Float, default=0.0)
     quantified_impact: Mapped[float] = mapped_column(Float, default=0.0)
 
+    job_summary: Mapped[str] = mapped_column(Text, default="")
+
     extracted_skills: Mapped[str] = mapped_column(Text, default="")   # JSON list
     missing_skills: Mapped[str] = mapped_column(Text, default="")     # JSON list
     suggestions: Mapped[str] = mapped_column(Text, default="")        # JSON list

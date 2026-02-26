@@ -8,7 +8,7 @@ import {
   FileSearch,
   Briefcase,
   Target,
-  BarChart3,
+  Brain,
   Settings,
   TrendingUp,
   Zap,
@@ -21,7 +21,7 @@ const navItems = [
   { label: "Analyze Resume", href: "/analyze", icon: FileSearch },
   { label: "Job Insights", href: "/jobs", icon: Briefcase },
   { label: "App Strategy", href: "/strategy", icon: Target },
-  { label: "Skill Heatmap", href: "/heatmap", icon: BarChart3 },
+  { label: "Improve Skills", href: "/improve-skills", icon: Brain },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

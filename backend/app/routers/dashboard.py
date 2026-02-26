@@ -45,6 +45,9 @@ async def dashboard_stats(
             skill_gaps=[SkillGap(**g) for g in _DEFAULT_SKILL_GAPS],
             total_analyses=0,
             callback_rate=0.0,
+            job_title="",
+            company="",
+            job_summary="",
         )
 
     latest = analyses[0]
@@ -88,4 +91,7 @@ async def dashboard_stats(
         skill_gaps=skill_gaps,
         total_analyses=total,
         callback_rate=callback_rate,
+        job_title=latest.job_title or "",
+        company=latest.company or "",
+        job_summary=latest.job_summary or "",
     )

@@ -10,14 +10,14 @@ import {
   ResponsiveContainer,
   Cell,
 } from "recharts";
-import { skillCoverageData } from "@/lib/mock";
-
 const COLORS = ["#6366f1", "#8b5cf6", "#a78bfa", "#7c3aed", "#4f46e5"];
 
-export function SkillBarChart() {
+interface SkillCoverageItem { skill: string; coverage: number; }
+
+export function SkillBarChart({ data }: { data: SkillCoverageItem[] }) {
   return (
     <ResponsiveContainer width="100%" height={240}>
-      <BarChart data={skillCoverageData} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+      <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
         <CartesianGrid strokeDasharray="3 3" stroke="hsl(217 33% 14%)" />
         <XAxis
           dataKey="skill"
@@ -41,7 +41,7 @@ export function SkillBarChart() {
           formatter={(value: number | undefined) => [`${value ?? 0}%`, "Coverage"]}
         />
         <Bar dataKey="coverage" radius={[6, 6, 0, 0]}>
-          {skillCoverageData.map((_, i) => (
+          {data.map((_, i) => (
             <Cell key={i} fill={COLORS[i % COLORS.length]} />
           ))}
         </Bar>

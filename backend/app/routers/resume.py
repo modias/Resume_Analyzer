@@ -9,7 +9,7 @@ from app.schemas.resume import AnalyzeResponse, AnalysisOut, OptimizationSuggest
 from app.services.auth import get_optional_user as get_current_user
 from app.services.pdf_parser import extract_text_from_pdf
 from app.services.match_scorer import compute_match
-from app.services.ai_suggester import generate_suggestions
+from app.services.ai_suggester import generate_suggestions, summarize_job_description
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -42,6 +42,8 @@ async def analyze_resume(
         resume_text, job_description, score_data["missing_skills"]
     )
 
+    job_summary = await summarize_job_description(job_description)
+
     # Persist to DB
     analysis = Analysis(
         user_id=current_user.id,
@@ -56,6 +58,7 @@ async def analyze_resume(
         extracted_skills=json.dumps(score_data["extracted_skills"]),
         missing_skills=json.dumps(score_data["missing_skills"]),
         suggestions=json.dumps(suggestions_raw),
+        job_summary=job_summary,
     )
     db.add(analysis)
     await db.commit()

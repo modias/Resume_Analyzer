@@ -191,6 +191,9 @@ export interface DashboardStats {
   skill_gaps: { skill: string; why: string }[];
   total_analyses: number;
   callback_rate: number;
+  job_title: string;
+  company: string;
+  job_summary: string;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -8,11 +8,13 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { StatCard } from "@/components/cards/StatCard";
 import { SkillBarChart } from "@/components/charts/SkillBarChart";
 import {
-  matchScore, statCards, skillGaps, skillBreakdowns, type SkillBreakdown,
+  skillBreakdowns, type SkillBreakdown,
   internConversionOverall, internConversionByCompany, conversionFactors,
   mentors, type Mentor, linkedInConnected,
 } from "@/lib/mock";
-import { AlertTriangle, TrendingUp, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, Linkedin, UserPlus, ExternalLink, School, Link2 } from "lucide-react";
+import { getDashboardStats, type DashboardStats } from "@/lib/api";
+import { AlertTriangle, TrendingUp, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, Linkedin, UserPlus, ExternalLink, School, Link2, FileSearch, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 function CircularGauge({ value }: { value: number }) {
   const radius = 70;
@@ -223,12 +225,26 @@ function MentorCard({ mentor, following, onToggle }: { mentor: Mentor; following
 }
 
 export default function DashboardPage() {
-  const [selectedGap, setSelectedGap] = useState<string>(skillGaps[0].skill);
-  const activeBreakdown = skillBreakdowns[selectedGap];
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [selectedGap, setSelectedGap] = useState<string>("");
   const [isLinkedInConnected, setIsLinkedInConnected] = useState(linkedInConnected);
   const [followingSet, setFollowingSet] = useState<Set<number>>(
     () => new Set(mentors.filter((m) => m.isFollowing).map((m) => m.id))
   );
+
+  useEffect(() => {
+    getDashboardStats()
+      .then((data) => {
+        setStats(data);
+        if (data.skill_gaps.length > 0) setSelectedGap(data.skill_gaps[0].skill);
+      })
+      .catch(() => setStats(null))
+      .finally(() => setLoadingStats(false));
+  }, []);
+
+  const skillGaps = stats?.skill_gaps ?? [];
+  const activeBreakdown: SkillBreakdown | undefined = skillBreakdowns[selectedGap];
 
   const toggleFollow = (id: number) =>
     setFollowingSet((prev) => {
@@ -237,6 +253,17 @@ export default function DashboardPage() {
       return next;
     });
 
+  const scoreLabel =
+    !stats || stats.match_score === 0 ? null :
+    stats.match_score >= 72 ? "Strong Alignment" :
+    stats.match_score >= 50 ? "Moderate Alignment" : "Needs Improvement";
+
+  const scoreBadgeClass =
+    !stats || stats.match_score === 0 ? "" :
+    stats.match_score >= 72 ? "bg-green-500/15 text-green-400 border-green-500/20" :
+    stats.match_score >= 50 ? "bg-yellow-500/15 text-yellow-400 border-yellow-500/20" :
+    "bg-red-500/15 text-red-400 border-red-500/20";
+
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
@@ -244,27 +271,72 @@ export default function DashboardPage() {
         <p className="text-muted-foreground text-sm mt-1">Your resume intelligence overview</p>
       </motion.div>
 
+      {/* Loading */}
+      {loadingStats && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+      )}
+
+      {/* No analysis yet */}
+      {!loadingStats && (!stats || stats.total_analyses === 0) && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="border-dashed border-border bg-card">
+            <CardContent className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                <FileSearch className="w-7 h-7 text-primary" />
+              </div>
+              <div>
+                <p className="text-base font-semibold text-foreground">No analysis yet</p>
+                <p className="text-sm text-muted-foreground mt-1">Analyze a resume to see your dashboard data here.</p>
+              </div>
+              <Link href="/analyze">
+                <Badge className="cursor-pointer bg-primary/20 text-primary border-primary/30 hover:bg-primary/30 transition-colors px-4 py-1.5 text-xs">
+                  Go to Analyze Resume →
+                </Badge>
+              </Link>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Dashboard content — only shown when data exists */}
+      {!loadingStats && stats && stats.total_analyses > 0 && (<>
+
       {/* Hero Match Score Card */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <Card className="border-border bg-gradient-to-br from-card via-card to-primary/5 overflow-hidden relative">
           <div className="absolute top-0 right-0 w-64 h-64 bg-primary/5 rounded-full -translate-y-1/2 translate-x-1/2" />
           <CardContent className="p-8 flex flex-col md:flex-row items-center gap-8">
-            <CircularGauge value={matchScore} />
+            <CircularGauge value={stats.match_score} />
             <div className="flex-1 space-y-3">
-              <Badge variant="secondary" className="bg-yellow-500/15 text-yellow-400 border-yellow-500/20 text-xs">
-                Moderate Alignment
-              </Badge>
-              <h2 className="text-2xl font-bold text-foreground">Current Match Score: {matchScore}%</h2>
-              <p className="text-muted-foreground">
-                Improve <span className="text-foreground font-semibold">3 key areas</span> to reach the optimal application threshold of 72%.
-              </p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                {["Add AWS skills", "Quantify impact", "Improve Tableau"].map((tip) => (
-                  <Badge key={tip} variant="outline" className="text-xs border-primary/30 text-primary">
-                    {tip}
-                  </Badge>
-                ))}
-              </div>
+              {scoreLabel && (
+                <Badge variant="secondary" className={`text-xs ${scoreBadgeClass}`}>
+                  {scoreLabel}
+                </Badge>
+              )}
+              <h2 className="text-2xl font-bold text-foreground">
+                Current Match Score: {stats.match_score}%
+                {(stats.job_title || stats.company) && (
+                  <span className="text-base font-normal text-muted-foreground ml-2">
+                    — {[stats.job_title, stats.company].filter(Boolean).join(" at ")}
+                  </span>
+                )}
+              </h2>
+              {stats.job_summary && (
+                <p className="text-sm text-muted-foreground leading-relaxed">
+                  {stats.job_summary}
+                </p>
+              )}
+              {skillGaps.length > 0 && (
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {skillGaps.slice(0, 3).map((g) => (
+                    <Badge key={g.skill} variant="outline" className="text-xs border-red-500/30 text-red-400">
+                      Add {g.skill}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -272,12 +344,13 @@ export default function DashboardPage() {
 
       {/* Stat Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {statCards.map((s, i) => (
+        {stats.stat_cards.map((s, i) => (
           <StatCard key={s.label} {...s} index={i} />
         ))}
       </div>
 
       {/* Skill Coverage Chart */}
+      {stats.skill_coverage.length > 0 && (
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
         <Card className="border-border bg-card">
           <CardHeader className="pb-2">
@@ -287,12 +360,14 @@ export default function DashboardPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="pt-0">
-            <SkillBarChart />
+            <SkillBarChart data={stats.skill_coverage} />
           </CardContent>
         </Card>
       </motion.div>
+      )}
 
       {/* Skill Gaps + Breakdown side-by-side */}
+      {skillGaps.length > 0 && (
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
 
@@ -358,6 +433,7 @@ export default function DashboardPage() {
 
         </div>
       </motion.div>
+      )}
 
       {/* LinkedIn Mentors */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
@@ -560,6 +636,7 @@ export default function DashboardPage() {
         </Card>
       </motion.div>
 
+      </>)}
     </div>
   );
 }
