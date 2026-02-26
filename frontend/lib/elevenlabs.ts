@@ -37,6 +37,54 @@ export async function speakText(text: string): Promise<void> {
   await audio.play();
 }
 
+export function buildResumeSummary(result: {
+  extracted_skills: string[];
+  required_skills: { skill: string; present: boolean }[];
+  missing_skills: string[];
+  match_score: number;
+  required_coverage: number;
+}): string {
+  const present = result.required_skills.filter((s) => s.present).map((s) => s.skill);
+  const missing = result.required_skills.filter((s) => !s.present).map((s) => s.skill);
+
+  let text = `Resume scan complete. `;
+  text += `We detected ${result.extracted_skills.length} skills on your resume. `;
+
+  if (result.extracted_skills.length > 0) {
+    text += `Skills found include: ${result.extracted_skills.slice(0, 8).join(", ")}. `;
+  }
+
+  if (present.length > 0) {
+    text += `You match ${present.length} required skill${present.length > 1 ? "s" : ""} from the job description: ${present.join(", ")}. `;
+  }
+
+  if (missing.length > 0) {
+    text += `However, you are missing ${missing.length} required skill${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. Consider adding these to strengthen your application. `;
+  }
+
+  text += `Your overall required skill coverage is ${result.required_coverage.toFixed(0)} percent.`;
+  return text;
+}
+
+export function buildJdSummary(jd: string, jobTitle?: string, company?: string): string {
+  const trimmed = jd.trim().slice(0, 3000);
+  let intro = "Here is the job description";
+  if (jobTitle && company) intro += ` for ${jobTitle} at ${company}`;
+  else if (jobTitle) intro += ` for ${jobTitle}`;
+  else if (company) intro += ` at ${company}`;
+  return `${intro}. ${trimmed}`;
+}
+
+export function buildSuggestionsSummary(suggestions: { original: string; suggested: string; reason?: string }[]): string {
+  if (suggestions.length === 0) return "No suggestions available.";
+  let text = `Here are ${suggestions.length} GPT-powered resume optimization suggestion${suggestions.length > 1 ? "s" : ""}. `;
+  suggestions.forEach((s, i) => {
+    text += `Suggestion ${i + 1}. Original: ${s.original}. Improved version: ${s.suggested}. `;
+    if (s.reason) text += `Reason: ${s.reason}. `;
+  });
+  return text;
+}
+
 export function buildAnalysisSummary(result: {
   match_score: number;
   required_coverage: number;

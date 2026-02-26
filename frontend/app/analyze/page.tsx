@@ -23,6 +23,7 @@ export default function AnalyzePage() {
   const [applied, setApplied] = useState<Set<number>>(new Set());
   const [speaking, setSpeaking] = useState(false);
   const [speakError, setSpeakError] = useState<string | null>(null);
+  const [speakingJd, setSpeakingJd] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = (e: React.DragEvent) => {

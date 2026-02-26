@@ -462,21 +462,21 @@ export default function DashboardPage() {
         </Card>
       </motion.div>
 
-      {/* Intern → Full-Time Conversion */}
+      {/* Intern → Part-Time Conversion */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
         <Card className="border-border bg-card">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between flex-wrap gap-2">
               <CardTitle className="text-base font-semibold flex items-center gap-2">
                 <Award className="w-4 h-4 text-green-400" />
-                Intern → Full-Time Conversion
+                Intern → Part-Time Conversion
               </CardTitle>
               <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-xs">
                 Industry data · 2024
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground mt-1">
-              What % of interns at top companies receive a full-time offer after their internship.
+              What % of interns at top companies receive a part-time offer after their internship.
             </p>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -488,7 +488,7 @@ export default function DashboardPage() {
                 <p className="text-xs text-muted-foreground mt-1">industry avg.</p>
               </div>
               <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">More than half of interns convert to full-time.</p>
+                <p className="text-sm font-medium text-foreground">More than half of interns convert to part-time.</p>
                 <p className="text-xs text-muted-foreground leading-relaxed">
                   Conversion rates vary significantly by company, team, and — most importantly — how well-prepared
                   the intern is going in. A higher match score before you start directly correlates with a better offer rate.
