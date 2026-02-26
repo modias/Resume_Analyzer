@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 60
     algorithm: str = "HS256"
 
-    openai_api_key: str = ""
+    gemini_api_key: str = ""
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 

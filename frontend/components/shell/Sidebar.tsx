@@ -36,8 +36,8 @@ export function Sidebar() {
           <Zap className="w-4 h-4 text-primary" />
         </div>
         <div>
-          <p className="text-sm font-semibold text-foreground leading-none">Internship</p>
-          <p className="text-sm font-semibold text-primary leading-none">Intelligence</p>
+          <p className="text-sm font-semibold text-foreground leading-none">Career</p>
+          <p className="text-sm font-semibold text-primary leading-none">Core</p>
         </div>
       </div>
 

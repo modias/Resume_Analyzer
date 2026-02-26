@@ -18,3 +18,4 @@ class User(Base):
     )
 
     analyses: Mapped[list["Analysis"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
+    practice_sessions: Mapped[list["PracticeSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

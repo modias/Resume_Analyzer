@@ -19,6 +19,7 @@ import {
   BookOpen,
   Wrench,
 } from "lucide-react";
+import { saveSkillSession } from "@/lib/api";
 
 const DIFFICULTIES = [
   { value: "easy", label: "Easy", color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
@@ -77,6 +78,8 @@ export default function ImproveSkillsPage() {
 
       const data: Question[] = await res.json();
       setQuestions(data);
+      // Save practice session to track skill progress on dashboard
+      saveSkillSession(language.trim(), difficulty).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate questions.");
     } finally {

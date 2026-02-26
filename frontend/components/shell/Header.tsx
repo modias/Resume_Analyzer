@@ -10,9 +10,9 @@ export function Header() {
       <div>
         <div className="flex items-center gap-2">
           <Zap className="w-4 h-4 text-primary" />
-          <span className="text-sm font-semibold text-foreground">Internship Intelligence</span>
+          <span className="text-sm font-semibold text-foreground">CareerCore</span>
         </div>
-        <p className="text-[11px] text-muted-foreground">Apply smarter. Not harder.</p>
+        <p className="text-[11px] text-muted-foreground">Your career foundation.</p>
       </div>
 
       <div className="flex items-center gap-3">

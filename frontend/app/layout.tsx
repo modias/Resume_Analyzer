@@ -7,8 +7,8 @@ import { Header } from "@/components/shell/Header";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Internship Intelligence",
-  description: "Apply smarter. Not harder.",
+  title: "CareerCore",
+  description: "Your career foundation.",
 };
 
 export default function RootLayout({

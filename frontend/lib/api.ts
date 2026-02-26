@@ -214,6 +214,29 @@ export interface Job {
   salary_estimate: string;
 }
 
+// ─── Skill Progress ───────────────────────────────────────────────────────────
+
+export interface SkillProgress {
+  language: string;
+  difficulty: string;
+  score: number;
+}
+
+export async function saveSkillSession(language: string, difficulty: string): Promise<void> {
+  const token = getToken();
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+  await fetch(`${API_BASE}/interview/save-session`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ language, difficulty }),
+  });
+}
+
+export async function getSkillProgress(): Promise<SkillProgress[]> {
+  return apiFetch<SkillProgress[]>("/interview/progress");
+}
+
 export async function getJobs(params?: {
   q?: string;
   demand?: string;
