@@ -1,7 +1,7 @@
 """
 Resume bullet optimization suggestions.
 
-Primary:  Google Gemini (if GEMINI_API_KEY is set)
+Primary:  Groq (if GROQ_API_KEY is set)
 Fallback: Rule-based rewrites using weak-word detection
 """
 
@@ -96,20 +96,24 @@ Rules:
 
 
 async def summarize_job_description(jd_text: str) -> str:
-    if not settings.gemini_api_key:
+    if not settings.groq_api_key:
         return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        from groq import Groq
+        client = Groq(api_key=settings.groq_api_key)
         prompt = (
             "Summarize the following job description in exactly 2-3 sentences. "
             "Focus on the role, key responsibilities, and top required skills. "
             "Be concise and professional. Return only the summary, no labels or extra text.\n\n"
             f"JOB DESCRIPTION:\n{jd_text[:3000]}"
         )
-        response = model.generate_content(prompt)
-        return (response.text or "").strip()
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=200,
+        )
+        return (response.choices[0].message.content or "").strip()
     except Exception:
         return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
 
@@ -119,23 +123,29 @@ async def generate_suggestions(
     jd_text: str,
     missing_skills: list[str],
 ) -> list[dict]:
-    if not settings.gemini_api_key:
+    if not settings.groq_api_key:
         return _rule_based_suggestions(resume_text, missing_skills)
 
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        from groq import Groq
+        client = Groq(api_key=settings.groq_api_key)
 
         prompt = (
-            f"{_SYSTEM_PROMPT}\n\n"
             f"RESUME (first 2000 chars):\n{resume_text[:2000]}\n\n"
             f"JOB DESCRIPTION (first 1000 chars):\n{jd_text[:1000]}\n\n"
             f"MISSING SKILLS: {', '.join(missing_skills[:8])}"
         )
 
-        response = model.generate_content(prompt)
-        content = response.text or "[]"
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.4,
+            max_tokens=600,
+        )
+        content = response.choices[0].message.content or "[]"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         suggestions = json.loads(content)

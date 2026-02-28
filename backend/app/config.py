@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
 
     gemini_api_key: str = ""
+    groq_api_key: str = ""
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 

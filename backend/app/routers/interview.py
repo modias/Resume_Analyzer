@@ -20,9 +20,10 @@ DIFFICULTY_PROMPTS = {
     "god": "expert-level, fiendishly difficult questions covering internals, compiler behavior, performance micro-optimization, and tricky gotchas that even senior engineers struggle with",
 }
 
-_SYSTEM_PROMPT = """
+def _build_system_prompt(count: int) -> str:
+    return f"""
 You are a senior software engineer and technical interviewer.
-Generate exactly 5 interview coding/technical questions for the given programming language and difficulty level.
+Generate exactly {count} interview coding/technical questions for the given programming language and difficulty level.
 
 Return a JSON array of objects, each with:
   "question" - the interview question (clear, specific, technical)
@@ -36,12 +37,27 @@ Return ONLY the JSON array, no markdown, no extra text.
 class QuestionRequest(BaseModel):
     language: str
     difficulty: str
+    count: int = 5
 
 
 class InterviewQuestion(BaseModel):
     question: str
     hint: str
     category: str
+
+
+class CheckAnswerRequest(BaseModel):
+    question: str
+    answer: str
+    language: str
+    hint: str = ""
+
+
+class CheckAnswerResponse(BaseModel):
+    correct: bool
+    score: int
+    feedback: str
+    ideal_answer: str
 
 
 class SkillProgress(BaseModel):
@@ -52,33 +68,97 @@ class SkillProgress(BaseModel):
 
 @router.post("/questions", response_model=list[InterviewQuestion])
 async def generate_questions(req: QuestionRequest):
-    if not settings.gemini_api_key:
-        raise HTTPException(status_code=503, detail="Gemini API key not configured.")
+    if not settings.groq_api_key:
+        raise HTTPException(status_code=503, detail="Groq API key not configured.")
 
     difficulty = req.difficulty.lower()
     if difficulty not in DIFFICULTY_PROMPTS:
         raise HTTPException(status_code=400, detail="difficulty must be easy, medium, hard, or god")
 
+    count = max(1, min(req.count, 15))
+
     try:
-        import google.generativeai as genai
-        genai.configure(api_key=settings.gemini_api_key)
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        from groq import Groq
+        client = Groq(api_key=settings.groq_api_key)
 
         prompt = (
-            f"{_SYSTEM_PROMPT}\n\n"
             f"Language: {req.language}\n"
             f"Difficulty: {difficulty} — {DIFFICULTY_PROMPTS[difficulty]}"
         )
 
-        response = model.generate_content(prompt)
-        content = response.text or "[]"
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": _build_system_prompt(count)},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.5,
+            max_tokens=300 * count,
+        )
+        content = response.choices[0].message.content or "[]"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         questions = json.loads(content)
-        return questions[:5]
+        return questions[:count]
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
+
+
+_CHECK_SYSTEM_PROMPT = """
+You are a strict but fair technical interviewer evaluating a candidate's answer to an interview question.
+
+Given the question, the candidate's answer, and an optional hint, evaluate the answer and return a JSON object with:
+  "correct"      - boolean, true if the answer is mostly correct (score >= 60)
+  "score"        - integer 0-100 rating the answer quality
+  "feedback"     - 2-3 sentences of constructive feedback explaining what was right/wrong
+  "ideal_answer" - a concise model answer (3-6 sentences max) the candidate can learn from
+
+Be honest but encouraging. Return ONLY the JSON object, no markdown, no extra text.
+""".strip()
+
+
+@router.post("/check-answer", response_model=CheckAnswerResponse)
+async def check_answer(req: CheckAnswerRequest):
+    if not settings.groq_api_key:
+        raise HTTPException(status_code=503, detail="Groq API key not configured.")
+
+    if not req.answer.strip():
+        raise HTTPException(status_code=400, detail="Answer cannot be empty.")
+
+    try:
+        from groq import Groq
+        client = Groq(api_key=settings.groq_api_key)
+
+        user_prompt = (
+            f"Language: {req.language}\n"
+            f"Question: {req.question}\n"
+            f"Hint: {req.hint or 'N/A'}\n"
+            f"Candidate's Answer: {req.answer.strip()}"
+        )
+
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[
+                {"role": "system", "content": _CHECK_SYSTEM_PROMPT},
+                {"role": "user", "content": user_prompt},
+            ],
+            temperature=0.3,
+            max_tokens=600,
+        )
+        content = response.choices[0].message.content or "{}"
+        content = re.sub(r"^```[a-z]*\n?", "", content.strip())
+        content = re.sub(r"\n?```$", "", content.strip())
+        result = json.loads(content)
+        return CheckAnswerResponse(
+            correct=bool(result.get("correct", False)),
+            score=int(result.get("score", 0)),
+            feedback=result.get("feedback", ""),
+            ideal_answer=result.get("ideal_answer", ""),
+        )
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to evaluate answer: {str(e)}")
 
 
 @router.post("/save-session")

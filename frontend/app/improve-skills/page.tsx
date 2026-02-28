@@ -18,6 +18,10 @@ import {
   Bug,
   BookOpen,
   Wrench,
+  CheckCircle2,
+  XCircle,
+  SendHorizonal,
+  Star,
 } from "lucide-react";
 import { saveSkillSession } from "@/lib/api";
 
@@ -43,14 +47,25 @@ interface Question {
   category: string;
 }
 
+interface AnswerResult {
+  correct: boolean;
+  score: number;
+  feedback: string;
+  ideal_answer: string;
+}
+
 export default function ImproveSkillsPage() {
   const [language, setLanguage] = useState("");
   const [difficulty, setDifficulty] = useState("medium");
+  const [questionCount, setQuestionCount] = useState(5);
   const [open, setOpen] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [revealed, setRevealed] = useState<Set<number>>(new Set());
+  const [answers, setAnswers] = useState<Record<number, string>>({});
+  const [checking, setChecking] = useState<Set<number>>(new Set());
+  const [results, setResults] = useState<Record<number, AnswerResult>>({});
 
   const selected = DIFFICULTIES.find((d) => d.value === difficulty)!;
 
@@ -63,12 +78,14 @@ export default function ImproveSkillsPage() {
     setLoading(true);
     setQuestions([]);
     setRevealed(new Set());
+    setAnswers({});
+    setResults({});
 
     try {
       const res = await fetch("http://localhost:8000/interview/questions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: language.trim(), difficulty }),
+        body: JSON.stringify({ language: language.trim(), difficulty, count: questionCount }),
       });
 
       if (!res.ok) {
@@ -78,7 +95,6 @@ export default function ImproveSkillsPage() {
 
       const data: Question[] = await res.json();
       setQuestions(data);
-      // Save practice session to track skill progress on dashboard
       saveSkillSession(language.trim(), difficulty).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate questions.");
@@ -95,6 +111,49 @@ export default function ImproveSkillsPage() {
     });
   };
 
+  const handleCheckAnswer = async (i: number) => {
+    const answer = answers[i] ?? "";
+    if (!answer.trim()) return;
+
+    setChecking((prev) => new Set(prev).add(i));
+    try {
+      const res = await fetch("http://localhost:8000/interview/check-answer", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: questions[i].question,
+          answer: answer.trim(),
+          language: language.trim(),
+          hint: questions[i].hint,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail ?? `Request failed (${res.status})`);
+      }
+
+      const result: AnswerResult = await res.json();
+      setResults((prev) => ({ ...prev, [i]: result }));
+    } catch (err) {
+      setResults((prev) => ({
+        ...prev,
+        [i]: {
+          correct: false,
+          score: 0,
+          feedback: err instanceof Error ? err.message : "Failed to evaluate answer.",
+          ideal_answer: "",
+        },
+      }));
+    } finally {
+      setChecking((prev) => {
+        const next = new Set(prev);
+        next.delete(i);
+        return next;
+      });
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
       {/* Header */}
@@ -104,7 +163,7 @@ export default function ImproveSkillsPage() {
           Improve Skills
         </h1>
         <p className="text-muted-foreground text-sm mt-1">
-          Enter a programming language and difficulty — GPT generates 5 tailored interview questions for you to practice.
+          Generate interview questions, write your answer, and get instant AI feedback.
         </p>
       </motion.div>
 
@@ -118,7 +177,6 @@ export default function ImproveSkillsPage() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Language input */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Programming Language
@@ -132,7 +190,6 @@ export default function ImproveSkillsPage() {
               />
             </div>
 
-            {/* Difficulty dropdown */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                 Difficulty Level
@@ -168,7 +225,28 @@ export default function ImproveSkillsPage() {
               </div>
             </div>
 
-            {/* Error */}
+            {/* Question count */}
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Number of Questions
+              </label>
+              <div className="flex gap-2 flex-wrap">
+                {[3, 5, 7, 10].map((n) => (
+                  <button
+                    key={n}
+                    onClick={() => setQuestionCount(n)}
+                    className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
+                      questionCount === n
+                        ? "bg-primary text-primary-foreground border-primary"
+                        : "bg-muted/40 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
+                    }`}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <AnimatePresence>
               {error && (
                 <motion.div
@@ -215,18 +293,21 @@ export default function ImproveSkillsPage() {
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0 }}
-            className="space-y-3"
+            className="space-y-4"
           >
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
               <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30 text-xs px-3">
-                {language} · {selected.label} · {questions.length} Questions
+                {language} · {selected.label} · {questions.length} {questions.length === 1 ? "Question" : "Questions"}
               </Badge>
               <div className="h-px flex-1 bg-border" />
             </div>
 
             {questions.map((q, i) => {
               const Icon = CATEGORY_ICONS[q.category] ?? Code2;
+              const result = results[i];
+              const isChecking = checking.has(i);
+
               return (
                 <motion.div
                   key={i}
@@ -235,7 +316,8 @@ export default function ImproveSkillsPage() {
                   transition={{ delay: i * 0.07 }}
                 >
                   <Card className="border-border bg-card">
-                    <CardContent className="p-4 space-y-3">
+                    <CardContent className="p-4 space-y-4">
+                      {/* Question header */}
                       <div className="flex items-start gap-3">
                         <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selected.bg} ${selected.color}`}>
                           {i + 1}
@@ -251,6 +333,7 @@ export default function ImproveSkillsPage() {
                         </div>
                       </div>
 
+                      {/* Hint toggle */}
                       <Button
                         size="sm"
                         variant="outline"
@@ -273,6 +356,95 @@ export default function ImproveSkillsPage() {
                               <Lightbulb className="w-4 h-4 text-primary shrink-0 mt-0.5" />
                               <p className="text-xs text-muted-foreground leading-relaxed">{q.hint}</p>
                             </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+
+                      {/* Answer box */}
+                      <div className="space-y-2">
+                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                          Your Answer
+                        </label>
+                        <textarea
+                          value={answers[i] ?? ""}
+                          onChange={(e) => setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+                          placeholder="Write your answer here…"
+                          rows={4}
+                          className="w-full resize-y rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono"
+                        />
+                        <Button
+                          size="sm"
+                          onClick={() => handleCheckAnswer(i)}
+                          disabled={isChecking || !(answers[i] ?? "").trim()}
+                          className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
+                        >
+                          {isChecking ? (
+                            <>
+                              <motion.div
+                                animate={{ rotate: 360 }}
+                                transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                                className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
+                              />
+                              Checking…
+                            </>
+                          ) : (
+                            <>
+                              <SendHorizonal className="w-3.5 h-3.5" />
+                              Check Answer
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Result */}
+                      <AnimatePresence>
+                        {result && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="space-y-3"
+                          >
+                            {/* Score bar */}
+                            <div className={`flex items-center gap-3 p-3 rounded-lg border ${result.correct ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"}`}>
+                              {result.correct
+                                ? <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
+                                : <XCircle className="w-5 h-5 text-red-400 shrink-0" />
+                              }
+                              <div className="flex-1">
+                                <p className={`text-sm font-semibold ${result.correct ? "text-green-400" : "text-red-400"}`}>
+                                  {result.correct ? "Correct!" : "Not quite right"}
+                                </p>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Star className="w-3.5 h-3.5 text-yellow-400" />
+                                <span className="text-sm font-bold text-yellow-400">{result.score}/100</span>
+                              </div>
+                            </div>
+
+                            {/* Score progress bar */}
+                            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${result.score}%` }}
+                                transition={{ duration: 0.6, ease: "easeOut" }}
+                                className={`h-full rounded-full ${result.score >= 80 ? "bg-green-400" : result.score >= 50 ? "bg-yellow-400" : "bg-red-400"}`}
+                              />
+                            </div>
+
+                            {/* Feedback */}
+                            <div className="p-3 rounded-lg bg-muted/40 border border-border space-y-2">
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Feedback</p>
+                              <p className="text-sm text-foreground leading-relaxed">{result.feedback}</p>
+                            </div>
+
+                            {/* Ideal answer */}
+                            {result.ideal_answer && (
+                              <div className="p-3 rounded-lg bg-primary/5 border border-primary/15 space-y-2">
+                                <p className="text-xs font-medium text-primary uppercase tracking-wide">Model Answer</p>
+                                <p className="text-sm text-muted-foreground leading-relaxed">{result.ideal_answer}</p>
+                              </div>
+                            )}
                           </motion.div>
                         )}
                       </AnimatePresence>
