@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -82,7 +84,7 @@ export default function ImproveSkillsPage() {
     setResults({});
 
     try {
-      const res = await fetch("http://localhost:8000/interview/questions", {
+      const res = await fetch(`${API_BASE}/interview/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ language: language.trim(), difficulty, count: questionCount }),
@@ -117,7 +119,7 @@ export default function ImproveSkillsPage() {
 
     setChecking((prev) => new Set(prev).add(i));
     try {
-      const res = await fetch("http://localhost:8000/interview/check-answer", {
+      const res = await fetch(`${API_BASE}/interview/check-answer`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

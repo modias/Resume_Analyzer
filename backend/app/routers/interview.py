@@ -13,6 +13,28 @@ from app.models.user import User
 router = APIRouter(prefix="/interview", tags=["interview"])
 settings = get_settings()
 
+KNOWN_LANGUAGES: set[str] = {
+    # General-purpose
+    "python", "javascript", "typescript", "java", "c", "c++", "c#", "go", "rust",
+    "swift", "kotlin", "ruby", "php", "scala", "r", "perl", "haskell", "erlang",
+    "elixir", "clojure", "f#", "ocaml", "dart", "lua", "julia", "groovy", "nim",
+    "crystal", "zig", "d", "v", "chapel", "ada", "fortran", "cobol", "pascal",
+    "delphi", "objective-c", "matlab", "octave", "smalltalk", "prolog", "lisp",
+    "common lisp", "scheme", "racket", "forth", "assembly", "asm",
+    # Web / scripting
+    "html", "css", "sql", "bash", "shell", "powershell", "batch",
+    # Data / ML / scientific
+    "sas", "stata", "spss", "mojo",
+    # Mobile
+    "flutter",
+    # Query / config
+    "graphql", "solidity", "vyper", "move",
+    # JVM / .NET variants
+    "groovy", "jruby", "jython",
+    # Esoteric / niche but real
+    "brainfuck", "befunge", "coq", "agda", "idris", "lean",
+}
+
 DIFFICULTY_PROMPTS = {
     "easy": "beginner-friendly, conceptual questions suitable for someone just learning the language",
     "medium": "intermediate-level questions covering common patterns, data structures, and standard library usage",
@@ -74,6 +96,9 @@ async def generate_questions(req: QuestionRequest):
     difficulty = req.difficulty.lower()
     if difficulty not in DIFFICULTY_PROMPTS:
         raise HTTPException(status_code=400, detail="difficulty must be easy, medium, hard, or god")
+
+    if req.language.strip().lower() not in KNOWN_LANGUAGES:
+        raise HTTPException(status_code=422, detail="Language not found")
 
     count = max(1, min(req.count, 15))
 

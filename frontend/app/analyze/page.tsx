@@ -325,26 +325,31 @@ export default function AnalyzePage() {
 
               <Card className="border-border bg-card">
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-sm font-semibold text-foreground">Required vs Missing</CardTitle>
+                  <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                    <XCircle className="w-4 h-4 text-red-400" />
+                    Missing Skills
+                    <Badge variant="secondary" className="ml-1 text-[10px] bg-red-500/10 text-red-400 border-red-500/20">
+                      {result.required_skills.filter((s) => !s.present).length}
+                    </Badge>
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-2">
-                    {result.required_skills.map((s) => (
-                      <div key={s.skill} className="flex items-center gap-2 text-sm">
-                        {s.present ? (
-                          <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
-                        ) : (
-                          <XCircle className="w-4 h-4 text-red-400 shrink-0" />
-                        )}
-                        <span className={s.present ? "text-foreground" : "text-muted-foreground"}>{s.skill}</span>
-                        {!s.present && (
-                          <Badge variant="outline" className="text-[10px] border-red-500/30 text-red-400 ml-auto">
-                            Missing
+                  {result.required_skills.filter((s) => !s.present).length === 0 ? (
+                    <div className="flex items-center gap-2 text-sm text-green-400">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      No missing skills — great match!
+                    </div>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {result.required_skills
+                        .filter((s) => !s.present)
+                        .map((s) => (
+                          <Badge key={s.skill} variant="outline" className="border-red-500/30 text-red-400 bg-red-500/5 text-xs">
+                            {s.skill}
                           </Badge>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                        ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             </div>
