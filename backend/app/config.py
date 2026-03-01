@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 
-    allowed_origins: str = "http://localhost:3000,http://localhost:3001"
+    allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003"
 
     @property
     def origins_list(self) -> list[str]:

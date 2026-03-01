@@ -1,6 +1,10 @@
 import json
 import re
+import logging
+import traceback
 from fastapi import APIRouter, HTTPException, Depends
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from pydantic import BaseModel
@@ -103,15 +107,15 @@ async def generate_questions(req: QuestionRequest):
     count = max(1, min(req.count, 15))
 
     try:
-        from groq import Groq
-        client = Groq(api_key=settings.groq_api_key)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=settings.groq_api_key)
 
         prompt = (
             f"Language: {req.language}\n"
             f"Difficulty: {difficulty} — {DIFFICULTY_PROMPTS[difficulty]}"
         )
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": _build_system_prompt(count)},
@@ -127,6 +131,7 @@ async def generate_questions(req: QuestionRequest):
         return questions[:count]
 
     except Exception as e:
+        logger.error("Groq /questions error: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to generate questions: {str(e)}")
 
 
@@ -152,8 +157,8 @@ async def check_answer(req: CheckAnswerRequest):
         raise HTTPException(status_code=400, detail="Answer cannot be empty.")
 
     try:
-        from groq import Groq
-        client = Groq(api_key=settings.groq_api_key)
+        from groq import AsyncGroq
+        client = AsyncGroq(api_key=settings.groq_api_key)
 
         user_prompt = (
             f"Language: {req.language}\n"
@@ -162,7 +167,7 @@ async def check_answer(req: CheckAnswerRequest):
             f"Candidate's Answer: {req.answer.strip()}"
         )
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[
                 {"role": "system", "content": _CHECK_SYSTEM_PROMPT},
