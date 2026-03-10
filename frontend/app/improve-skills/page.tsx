@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import { motion, AnimatePresence } from "framer-motion";
@@ -24,8 +24,12 @@ import {
   XCircle,
   SendHorizonal,
   Star,
+  Volume2,
+  VolumeX,
+  Loader2,
 } from "lucide-react";
 import { saveSkillSession } from "@/lib/api";
+import { speakText, buildSkillFeedbackText } from "@/lib/elevenlabs";
 
 const DIFFICULTIES = [
   { value: "easy", label: "Easy", color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
@@ -68,6 +72,9 @@ export default function ImproveSkillsPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [checking, setChecking] = useState<Set<number>>(new Set());
   const [results, setResults] = useState<Record<number, AnswerResult>>({});
+  const [speaking, setSpeaking] = useState<number | null>(null);
+  const [loadingAudio, setLoadingAudio] = useState<Set<number>>(new Set());
+  const currentAudio = useRef<HTMLAudioElement | null>(null);;
 
   const selected = DIFFICULTIES.find((d) => d.value === difficulty)!;
 
@@ -149,6 +156,53 @@ export default function ImproveSkillsPage() {
       }));
     } finally {
       setChecking((prev) => {
+        const next = new Set(prev);
+        next.delete(i);
+        return next;
+      });
+    }
+  };
+
+  const handleSpeak = async (i: number) => {
+    const result = results[i];
+    if (!result) return;
+
+    // Stop current audio if speaking this same question
+    if (speaking === i) {
+      currentAudio.current?.pause();
+      currentAudio.current = null;
+      setSpeaking(null);
+      return;
+    }
+
+    // Stop any other audio that's playing
+    if (currentAudio.current) {
+      currentAudio.current.pause();
+      currentAudio.current = null;
+    }
+    setSpeaking(null);
+
+    setLoadingAudio((prev) => new Set(prev).add(i));
+    try {
+      const text = buildSkillFeedbackText(
+        questions[i].question,
+        result.correct,
+        result.score,
+        result.feedback,
+        result.ideal_answer
+      );
+      const audio = await speakText(text);
+      currentAudio.current = audio;
+      setSpeaking(i);
+      audio.onended = () => {
+        setSpeaking(null);
+        currentAudio.current = null;
+        URL.revokeObjectURL(audio.src);
+      };
+    } catch {
+      // silently fail — no key or network error
+    } finally {
+      setLoadingAudio((prev) => {
         const next = new Set(prev);
         next.delete(i);
         return next;
@@ -418,7 +472,7 @@ export default function ImproveSkillsPage() {
                                   {result.correct ? "Correct!" : "Not quite right"}
                                 </p>
                               </div>
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1.5">
                                 <Star className="w-3.5 h-3.5 text-yellow-400" />
                                 <span className="text-sm font-bold text-yellow-400">{result.score}/100</span>
                               </div>
@@ -436,7 +490,42 @@ export default function ImproveSkillsPage() {
 
                             {/* Feedback */}
                             <div className="p-3 rounded-lg bg-muted/40 border border-border space-y-2">
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Feedback</p>
+                              <div className="flex items-center justify-between">
+                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Feedback</p>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => handleSpeak(i)}
+                                  disabled={loadingAudio.has(i)}
+                                  className={`h-7 gap-1.5 text-xs px-2 transition-all ${
+                                    speaking === i
+                                      ? "text-primary bg-primary/10 hover:bg-primary/20"
+                                      : "text-muted-foreground hover:text-primary hover:bg-primary/10"
+                                  }`}
+                                >
+                                  {loadingAudio.has(i) ? (
+                                    <>
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                      Loading…
+                                    </>
+                                  ) : speaking === i ? (
+                                    <>
+                                      <motion.div
+                                        animate={{ scale: [1, 1.2, 1] }}
+                                        transition={{ repeat: Infinity, duration: 1 }}
+                                      >
+                                        <VolumeX className="w-3.5 h-3.5" />
+                                      </motion.div>
+                                      Stop
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Volume2 className="w-3.5 h-3.5" />
+                                      Listen
+                                    </>
+                                  )}
+                                </Button>
+                              </div>
                               <p className="text-sm text-foreground leading-relaxed">{result.feedback}</p>
                             </div>
 

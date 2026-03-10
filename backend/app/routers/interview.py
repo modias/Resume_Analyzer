@@ -107,23 +107,25 @@ async def generate_questions(req: QuestionRequest):
     count = max(1, min(req.count, 15))
 
     try:
+        import httpx
         from groq import AsyncGroq
-        client = AsyncGroq(api_key=settings.groq_api_key)
+        async with httpx.AsyncClient(proxy=None) as http_client:
+            client = AsyncGroq(api_key=settings.groq_api_key, http_client=http_client)
 
-        prompt = (
-            f"Language: {req.language}\n"
-            f"Difficulty: {difficulty} — {DIFFICULTY_PROMPTS[difficulty]}"
-        )
+            prompt = (
+                f"Language: {req.language}\n"
+                f"Difficulty: {difficulty} — {DIFFICULTY_PROMPTS[difficulty]}"
+            )
 
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": _build_system_prompt(count)},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.5,
-            max_tokens=300 * count,
-        )
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": _build_system_prompt(count)},
+                    {"role": "user", "content": prompt},
+                ],
+                temperature=0.5,
+                max_tokens=300 * count,
+            )
         content = response.choices[0].message.content or "[]"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
@@ -157,25 +159,27 @@ async def check_answer(req: CheckAnswerRequest):
         raise HTTPException(status_code=400, detail="Answer cannot be empty.")
 
     try:
+        import httpx
         from groq import AsyncGroq
-        client = AsyncGroq(api_key=settings.groq_api_key)
+        async with httpx.AsyncClient(proxy=None) as http_client:
+            client = AsyncGroq(api_key=settings.groq_api_key, http_client=http_client)
 
-        user_prompt = (
-            f"Language: {req.language}\n"
-            f"Question: {req.question}\n"
-            f"Hint: {req.hint or 'N/A'}\n"
-            f"Candidate's Answer: {req.answer.strip()}"
-        )
+            user_prompt = (
+                f"Language: {req.language}\n"
+                f"Question: {req.question}\n"
+                f"Hint: {req.hint or 'N/A'}\n"
+                f"Candidate's Answer: {req.answer.strip()}"
+            )
 
-        response = await client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[
-                {"role": "system", "content": _CHECK_SYSTEM_PROMPT},
-                {"role": "user", "content": user_prompt},
-            ],
-            temperature=0.3,
-            max_tokens=600,
-        )
+            response = await client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": _CHECK_SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
+                ],
+                temperature=0.3,
+                max_tokens=600,
+            )
         content = response.choices[0].message.content or "{}"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())

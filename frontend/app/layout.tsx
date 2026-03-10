@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/shell/Sidebar";
-import { Header } from "@/components/shell/Header";
+import { ShellWrapper } from "@/components/shell/ShellWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -18,14 +17,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="dark">
+      <head>
+        {/* Apply saved theme before first paint to avoid flash */}
+        <script dangerouslySetInnerHTML={{
+          __html: `(function(){var t=localStorage.getItem('theme');if(t==='light'){document.documentElement.classList.remove('dark')}else{document.documentElement.classList.add('dark')}})();`
+        }} />
+      </head>
       <body className={inter.className}>
-        <Sidebar />
-        <Header />
-        <main className="ml-[260px] pt-14 min-h-screen bg-background">
-          <div className="max-w-7xl mx-auto px-6 py-8">
-            {children}
-          </div>
-        </main>
+        <ShellWrapper>{children}</ShellWrapper>
       </body>
     </html>
   );

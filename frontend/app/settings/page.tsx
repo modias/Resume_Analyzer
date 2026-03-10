@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Moon, Bell, Shield, User, Save, Trash2, AlertTriangle } from "lucide-react";
+import { getMe, updateMe } from "@/lib/api";
 
 function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -31,16 +32,50 @@ export default function SettingsPage() {
   const [darkMode, setDarkMode] = useState(true);
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(false);
-  const [name, setName] = useState("Arjun Modi");
-  const [email, setEmail] = useState("arjun@example.com");
-  const [school, setSchool] = useState("UC Berkeley");
-  const [major, setMajor] = useState("Computer Science");
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [school, setSchool] = useState("");
+  const [major, setMajor] = useState("");
   const [saved, setSaved] = useState(false);
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+  // Load real user data and saved theme on mount
+  useEffect(() => {
+    getMe().then((u) => {
+      setName(u.name);
+      setEmail(u.email);
+      setSchool(u.school);
+      setMajor(u.major);
+    }).catch(() => {});
+
+    const savedTheme = localStorage.getItem("theme");
+    setDarkMode(savedTheme !== "light");
+  }, []);
+
+  const handleToggleDarkMode = () => {
+    const next = !darkMode;
+    setDarkMode(next);
+    if (next) {
+      document.documentElement.classList.add("dark");
+      localStorage.setItem("theme", "dark");
+    } else {
+      document.documentElement.classList.remove("dark");
+      localStorage.setItem("theme", "light");
+    }
   };
+
+  const handleSave = async () => {
+    try {
+      await updateMe({ name, school, major });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch {
+      setSaved(false);
+    }
+  };
+
+  const initials = name
+    ? name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : "??";
 
   return (
     <div className="space-y-6 max-w-2xl">
@@ -62,7 +97,7 @@ export default function SettingsPage() {
           <CardContent className="space-y-4">
             <div className="flex items-center gap-4 pb-2">
               <div className="w-16 h-16 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-xl font-bold text-white">
-                AM
+                {initials}
               </div>
               <div>
                 <p className="text-sm font-semibold text-foreground">{name}</p>
@@ -141,7 +176,7 @@ export default function SettingsPage() {
                 label: "Dark Mode",
                 desc: "Use dark theme across the application",
                 state: darkMode,
-                toggle: () => setDarkMode(!darkMode),
+                toggle: handleToggleDarkMode,
               },
               {
                 icon: Bell,

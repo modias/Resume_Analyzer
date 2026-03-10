@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { jobs, Job } from "@/lib/mock";
-import { Search, ExternalLink, TrendingUp, Banknote, BarChart2 } from "lucide-react";
+import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star } from "lucide-react";
+import { getMe } from "@/lib/api";
 
 function MatchBadge({ score }: { score: number }) {
   const color =
@@ -42,6 +43,16 @@ function DemandBadge({ level }: { level: string }) {
 export default function JobsPage() {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<Job | null>(null);
+  const [dreamCompanies, setDreamCompanies] = useState<string[]>([]);
+
+  useEffect(() => {
+    getMe()
+      .then((u) => setDreamCompanies(u.dream_companies ?? []))
+      .catch(() => {});
+  }, []);
+
+  const isDream = (company: string) =>
+    dreamCompanies.some((d) => d.toLowerCase() === company.toLowerCase());
 
   const filtered = jobs.filter(
     (j) =>
@@ -49,12 +60,36 @@ export default function JobsPage() {
       j.role.toLowerCase().includes(query.toLowerCase())
   );
 
+  // Dream companies pinned to top, then the rest
+  const sorted = [
+    ...filtered.filter((j) => isDream(j.company)),
+    ...filtered.filter((j) => !isDream(j.company)),
+  ];
+
+  const dreamCount = filtered.filter((j) => isDream(j.company)).length;
+
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-bold text-foreground">Job Insights</h1>
         <p className="text-muted-foreground text-sm mt-1">Internship roles matched to your profile</p>
       </motion.div>
+
+      {/* Dream company callout */}
+      {dreamCount > 0 && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
+          <Card className="border-yellow-500/20 bg-yellow-500/5">
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-yellow-500/15 flex items-center justify-center shrink-0">
+                <Star className="w-4 h-4 text-yellow-400 fill-yellow-400" />
+              </div>
+              <p className="text-sm text-muted-foreground">
+                <span className="text-foreground font-semibold">{dreamCount} dream compan{dreamCount !== 1 ? "ies" : "y"}</span> found — pinned to the top with a ⭐
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <Card className="border-border bg-card">
@@ -70,7 +105,7 @@ export default function JobsPage() {
                 />
               </div>
               <Badge variant="secondary" className="whitespace-nowrap text-xs">
-                {filtered.length} roles
+                {sorted.length} roles
               </Badge>
             </div>
           </CardHeader>
@@ -78,6 +113,7 @@ export default function JobsPage() {
             <Table>
               <TableHeader>
                 <TableRow className="border-border hover:bg-transparent">
+                  <TableHead className="text-muted-foreground text-xs font-medium w-8"></TableHead>
                   <TableHead className="text-muted-foreground text-xs font-medium">Company</TableHead>
                   <TableHead className="text-muted-foreground text-xs font-medium">Role</TableHead>
                   <TableHead className="text-muted-foreground text-xs font-medium">Match Score</TableHead>
@@ -86,15 +122,22 @@ export default function JobsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((job, i) => (
+                {sorted.map((job, i) => (
                   <motion.tr
                     key={job.id}
                     initial={{ opacity: 0, x: -8 }}
                     animate={{ opacity: 1, x: 0 }}
                     transition={{ delay: i * 0.04 }}
                     onClick={() => setSelected(job)}
-                    className="border-border cursor-pointer hover:bg-accent/50 transition-colors group"
+                    className={`border-border cursor-pointer hover:bg-accent/50 transition-colors group ${
+                      isDream(job.company) ? "bg-yellow-500/5" : ""
+                    }`}
                   >
+                    <TableCell className="pr-0">
+                      {isDream(job.company) && (
+                        <Star className="w-3.5 h-3.5 text-yellow-400 fill-yellow-400" />
+                      )}
+                    </TableCell>
                     <TableCell className="font-semibold text-sm text-foreground">{job.company}</TableCell>
                     <TableCell className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{job.role}</TableCell>
                     <TableCell><MatchBadge score={job.matchScore} /></TableCell>
@@ -116,8 +159,18 @@ export default function JobsPage() {
               <SheetHeader className="pb-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <SheetTitle className="text-lg font-bold text-foreground">{selected.role}</SheetTitle>
+                    <div className="flex items-center gap-2">
+                      <SheetTitle className="text-lg font-bold text-foreground">{selected.role}</SheetTitle>
+                      {isDream(selected.company) && (
+                        <Star className="w-4 h-4 text-yellow-400 fill-yellow-400 shrink-0" />
+                      )}
+                    </div>
                     <p className="text-sm text-muted-foreground mt-0.5">{selected.company}</p>
+                    {isDream(selected.company) && (
+                      <Badge className="mt-1.5 text-[10px] bg-yellow-500/15 text-yellow-400 border-yellow-500/20 border">
+                        Dream Company
+                      </Badge>
+                    )}
                   </div>
                   <MatchBadge score={selected.matchScore} />
                 </div>

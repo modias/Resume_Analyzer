@@ -3,7 +3,7 @@ const ELEVENLABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY ?? "";
 // Rachel — natural, clear voice
 const VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 
-export async function speakText(text: string): Promise<void> {
+export async function speakText(text: string): Promise<HTMLAudioElement> {
   const response = await fetch(
     `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`,
     {
@@ -35,6 +35,25 @@ export async function speakText(text: string): Promise<void> {
   const audio = new Audio(url);
   audio.onended = () => URL.revokeObjectURL(url);
   await audio.play();
+  return audio;
+}
+
+export function buildSkillFeedbackText(
+  question: string,
+  correct: boolean,
+  score: number,
+  feedback: string,
+  idealAnswer: string
+): string {
+  let text = `Question: ${question}. `;
+  text += correct
+    ? `Great job — your answer is correct! You scored ${score} out of 100. `
+    : `Not quite right. You scored ${score} out of 100. `;
+  text += `Here is the feedback: ${feedback}. `;
+  if (idealAnswer) {
+    text += `The model answer is: ${idealAnswer}.`;
+  }
+  return text;
 }
 
 export function buildResumeSummary(result: {

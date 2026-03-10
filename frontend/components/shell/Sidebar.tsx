@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
@@ -15,6 +16,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { getMe, type User } from "@/lib/api";
 
 const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -27,6 +29,17 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [user, setUser] = useState<User | null>(null);
+
+  useEffect(() => {
+    getMe().then(setUser).catch(() => {});
+  }, []);
+
+  const initials = user?.name
+    ? user.name.split(" ").map((w) => w[0]).join("").slice(0, 2).toUpperCase()
+    : "??";
+  const displayName = user?.name ?? "Loading…";
+  const displayEmail = user?.email ?? "";
 
   return (
     <aside className="fixed left-0 top-0 h-screen w-[260px] flex flex-col border-r border-border bg-card z-40">
@@ -78,11 +91,11 @@ export function Sidebar() {
       <div className="p-4 border-t border-border space-y-3">
         <div className="flex items-center gap-2 p-2 rounded-lg bg-muted/50">
           <div className="w-8 h-8 rounded-full bg-gradient-to-br from-primary to-purple-500 flex items-center justify-center text-xs font-bold text-white shrink-0">
-            AM
+            {initials}
           </div>
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-semibold text-foreground truncate">Arjun Modi</p>
-            <p className="text-[11px] text-muted-foreground truncate">arjun@example.com</p>
+            <p className="text-xs font-semibold text-foreground truncate">{displayName}</p>
+            <p className="text-[11px] text-muted-foreground truncate">{displayEmail}</p>
           </div>
         </div>
         <div className="flex items-center justify-between px-2 py-2 rounded-lg bg-green-500/10 border border-green-500/20">

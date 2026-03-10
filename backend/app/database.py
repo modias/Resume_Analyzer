@@ -20,3 +20,17 @@ async def get_db() -> AsyncSession:
 async def init_db() -> None:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await _migrate(conn)
+
+
+async def _migrate(conn) -> None:
+    """Idempotent column additions for existing deployments."""
+    from sqlalchemy import text
+    for sql in [
+        "ALTER TABLE users ADD COLUMN skills TEXT DEFAULT '[]'",
+        "ALTER TABLE users ADD COLUMN dream_companies TEXT DEFAULT '[]'",
+    ]:
+        try:
+            await conn.execute(text(sql))
+        except Exception:
+            pass  # column already exists

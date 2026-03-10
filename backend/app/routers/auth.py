@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -21,13 +22,15 @@ async def register(body: UserRegister, db: AsyncSession = Depends(get_db)):
         hashed_password=hash_password(body.password),
         school=body.school,
         major=body.major,
+        skills=json.dumps(body.skills),
+        dream_companies=json.dumps(body.dream_companies),
     )
     db.add(user)
     await db.commit()
     await db.refresh(user)
 
     token = create_access_token({"sub": str(user.id)})
-    return TokenOut(access_token=token, user=UserOut.model_validate(user))
+    return TokenOut(access_token=token, user=_to_user_out(user))
 
 
 @router.post("/login", response_model=TokenOut)
@@ -39,12 +42,12 @@ async def login(body: UserLogin, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
     token = create_access_token({"sub": str(user.id)})
-    return TokenOut(access_token=token, user=UserOut.model_validate(user))
+    return TokenOut(access_token=token, user=_to_user_out(user))
 
 
 @router.get("/me", response_model=UserOut)
 async def me(current_user: User = Depends(get_current_user)):
-    return UserOut.model_validate(current_user)
+    return _to_user_out(current_user)
 
 
 @router.patch("/me", response_model=UserOut)
@@ -59,7 +62,24 @@ async def update_me(
         current_user.school = body.school
     if body.major is not None:
         current_user.major = body.major
+    if body.skills is not None:
+        current_user.skills = json.dumps(body.skills)
+    if body.dream_companies is not None:
+        current_user.dream_companies = json.dumps(body.dream_companies)
 
     await db.commit()
     await db.refresh(current_user)
-    return UserOut.model_validate(current_user)
+    return _to_user_out(current_user)
+
+
+def _to_user_out(user: User) -> UserOut:
+    return UserOut(
+        id=user.id,
+        name=user.name,
+        email=user.email,
+        school=user.school,
+        major=user.major,
+        skills=json.loads(user.skills or "[]"),
+        dream_companies=json.loads(user.dream_companies or "[]"),
+        created_at=user.created_at,
+    )

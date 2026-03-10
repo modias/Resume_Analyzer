@@ -8,6 +8,8 @@ class UserRegister(BaseModel):
     password: str
     school: str = ""
     major: str = ""
+    skills: list[str] = []
+    dream_companies: list[str] = []
 
 
 class UserLogin(BaseModel):
@@ -21,6 +23,8 @@ class UserOut(BaseModel):
     email: str
     school: str
     major: str
+    skills: list[str] = []
+    dream_companies: list[str] = []
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -36,3 +40,5 @@ class UserUpdate(BaseModel):
     name: str | None = None
     school: str | None = None
     major: str | None = None
+    skills: list[str] | None = None
+    dream_companies: list[str] | None = None

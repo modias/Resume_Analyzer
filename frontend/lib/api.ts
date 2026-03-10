@@ -70,6 +70,8 @@ export interface User {
   email: string;
   school: string;
   major: string;
+  skills: string[];
+  dream_companies: string[];
 }
 
 export interface AuthResponse {
@@ -82,12 +84,14 @@ export async function register(
   email: string,
   password: string,
   school = "",
-  major = ""
+  major = "",
+  skills: string[] = [],
+  dream_companies: string[] = [],
 ): Promise<AuthResponse> {
   const data = await apiFetch<AuthResponse>("/auth/register", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password, school, major }),
+    body: JSON.stringify({ name, email, password, school, major, skills, dream_companies }),
     skipAuth: true,
   });
   setToken(data.access_token);
