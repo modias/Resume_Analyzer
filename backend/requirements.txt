@@ -30,6 +30,9 @@ httpx==0.27.2
 # BCrypt (pinned for passlib compat)
 bcrypt==4.0.1
 
+# Async email
+aiosmtplib>=3.0.0
+
 # Email validation
 email-validator==2.2.0
 

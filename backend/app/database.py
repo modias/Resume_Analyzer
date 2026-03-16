@@ -29,6 +29,10 @@ async def _migrate(conn) -> None:
     for sql in [
         "ALTER TABLE users ADD COLUMN skills TEXT DEFAULT '[]'",
         "ALTER TABLE users ADD COLUMN dream_companies TEXT DEFAULT '[]'",
+        "ALTER TABLE users ADD COLUMN is_verified INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN verification_code TEXT",
+        "ALTER TABLE users ADD COLUMN verification_expires_at DATETIME",
+        "ALTER TABLE users ADD COLUMN dream_job VARCHAR(120) DEFAULT ''",
     ]:
         try:
             await conn.execute(text(sql))

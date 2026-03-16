@@ -8,7 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Moon, Bell, Shield, User, Save, Trash2, AlertTriangle } from "lucide-react";
-import { getMe, updateMe } from "@/lib/api";
+import { getMe, updateMe, deleteAccount } from "@/lib/api";
 
 function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -37,6 +37,8 @@ export default function SettingsPage() {
   const [school, setSchool] = useState("");
   const [major, setMajor] = useState("");
   const [saved, setSaved] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
 
   // Load real user data and saved theme on mount
   useEffect(() => {
@@ -60,6 +62,16 @@ export default function SettingsPage() {
     } else {
       document.documentElement.classList.remove("dark");
       localStorage.setItem("theme", "light");
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      window.location.href = "/login";
+    } catch {
+      setDeleting(false);
     }
   };
 
@@ -229,7 +241,7 @@ export default function SettingsPage() {
                 <p className="text-sm font-medium text-foreground">Delete Account</p>
                 <p className="text-xs text-muted-foreground">Permanently delete your account and all data</p>
               </div>
-              <Dialog>
+              <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
                 <DialogTrigger asChild>
                   <Button variant="destructive" size="sm" className="gap-2 bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/25">
                     <Trash2 className="w-3.5 h-3.5" />
@@ -244,11 +256,11 @@ export default function SettingsPage() {
                     </DialogDescription>
                   </DialogHeader>
                   <DialogFooter className="gap-2">
-                    <Button variant="outline" className="border-border text-foreground hover:bg-accent" size="sm">
+                    <Button variant="outline" className="border-border text-foreground hover:bg-accent" size="sm" onClick={() => setDeleteOpen(false)} disabled={deleting}>
                       Cancel
                     </Button>
-                    <Button variant="destructive" size="sm" className="bg-red-500 hover:bg-red-600 text-white">
-                      Yes, Delete My Account
+                    <Button variant="destructive" size="sm" className="bg-red-500 hover:bg-red-600 text-white" onClick={handleDeleteAccount} disabled={deleting}>
+                      {deleting ? "Deleting…" : "Yes, Delete My Account"}
                     </Button>
                   </DialogFooter>
                 </DialogContent>

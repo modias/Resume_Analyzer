@@ -10,6 +10,7 @@ class UserRegister(BaseModel):
     major: str = ""
     skills: list[str] = []
     dream_companies: list[str] = []
+    dream_job: str = ""
 
 
 class UserLogin(BaseModel):
@@ -25,6 +26,8 @@ class UserOut(BaseModel):
     major: str
     skills: list[str] = []
     dream_companies: list[str] = []
+    dream_job: str = ""
+    is_verified: bool = False
     created_at: datetime.datetime
 
     model_config = {"from_attributes": True}
@@ -42,3 +45,23 @@ class UserUpdate(BaseModel):
     major: str | None = None
     skills: list[str] | None = None
     dream_companies: list[str] | None = None
+    dream_job: str | None = None
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
+
+
+class UserLogOut(BaseModel):
+    id: int
+    action: str
+    detail: str
+    ip_address: str | None
+    created_at: datetime.datetime
+
+    model_config = {"from_attributes": True}

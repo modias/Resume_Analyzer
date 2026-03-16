@@ -1,30 +1,27 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, ChevronRight, ChevronLeft } from "lucide-react";
-import { login, register } from "@/lib/api";
+import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, RefreshCw, Mail, Code2, Briefcase } from "lucide-react";
+import { login, register, verifyEmail, resendVerification, updateMe } from "@/lib/api";
 
-// ─── Skill & company options ──────────────────────────────────────────────────
+// ─── Options ──────────────────────────────────────────────────────────────────
 
-const SKILL_OPTIONS = [
-  "Python", "SQL", "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch",
-  "Scikit-learn", "R", "Tableau", "Power BI", "AWS", "GCP", "Azure", "Docker",
-  "Kubernetes", "Spark", "Airflow", "dbt", "Kafka", "JavaScript", "TypeScript",
-  "Java", "C++", "Go", "Rust", "Statistics", "A/B Testing", "NLP", "Computer Vision",
-  "Git", "REST APIs", "Pandas", "NumPy", "PostgreSQL", "MongoDB",
+const CODING_LANGUAGES = [
+  "Python", "JavaScript", "TypeScript", "Java", "C++", "C#", "Go",
+  "Rust", "Swift", "Kotlin", "Ruby", "PHP", "Scala", "R", "MATLAB",
+  "SQL", "Bash", "Dart", "Elixir", "Haskell",
 ];
 
-const COMPANY_OPTIONS = [
-  "Google", "Meta", "Amazon", "Apple", "Microsoft", "Netflix", "Stripe",
-  "Airbnb", "Uber", "Lyft", "Spotify", "Salesforce", "Adobe", "Twitter/X",
-  "LinkedIn", "Snap", "Coinbase", "Databricks", "OpenAI", "Anthropic",
-  "Palantir", "Nvidia", "Intel", "IBM", "Oracle",
+const DREAM_JOB_ROLES = [
+  "Software Engineer", "Frontend Engineer", "Backend Engineer", "Full-Stack Engineer",
+  "Data Scientist", "ML Engineer", "AI Researcher", "Data Engineer",
+  "DevOps / SRE", "Cloud Engineer", "Security Engineer", "Mobile Engineer",
+  "Product Manager", "UX Designer", "Quantitative Analyst", "Blockchain Engineer",
 ];
 
 // ─── Small toggle chip ────────────────────────────────────────────────────────
@@ -33,22 +30,24 @@ function Chip({
   label,
   selected,
   onClick,
+  icon,
 }: {
   label: string;
   selected: boolean;
   onClick: () => void;
+  icon?: React.ReactNode;
 }) {
   return (
     <button
       type="button"
       onClick={onClick}
-      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-medium border transition-all duration-150 ${
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 ${
         selected
-          ? "bg-primary text-primary-foreground border-primary shadow-sm"
-          : "bg-muted/40 text-muted-foreground border-border hover:border-primary/40 hover:text-foreground"
+          ? "bg-primary text-primary-foreground border-primary shadow-sm scale-[1.02]"
+          : "bg-muted/40 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
       }`}
     >
-      {selected && <Check className="w-3 h-3" />}
+      {selected ? <Check className="w-3 h-3" /> : icon}
       {label}
     </button>
   );
@@ -75,15 +74,90 @@ function StepDots({ step, total }: { step: number; total: number }) {
   );
 }
 
+// ─── OTP Input (6 boxes with paste support) ───────────────────────────────────
+
+function OtpInput({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const inputs = useRef<(HTMLInputElement | null)[]>([]);
+
+  const handleChange = (idx: number, char: string) => {
+    const clean = char.replace(/\D/g, "").slice(-1);
+    const next = value.split("").concat(Array(6).fill("")).slice(0, 6);
+    next[idx] = clean;
+    const joined = next.join("");
+    onChange(joined);
+    if (clean && idx < 5) inputs.current[idx + 1]?.focus();
+  };
+
+  const handleKeyDown = (idx: number, e: React.KeyboardEvent) => {
+    if (e.key === "Backspace") {
+      if (!value[idx] && idx > 0) {
+        const next = value.split("");
+        next[idx - 1] = "";
+        onChange(next.join(""));
+        inputs.current[idx - 1]?.focus();
+      } else {
+        const next = value.split("");
+        next[idx] = "";
+        onChange(next.join(""));
+      }
+    }
+  };
+
+  const handlePaste = (e: React.ClipboardEvent) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
+    onChange(pasted.padEnd(6, "").slice(0, 6));
+    const focusIdx = Math.min(pasted.length, 5);
+    inputs.current[focusIdx]?.focus();
+  };
+
+  return (
+    <div className="flex gap-2 justify-center" onPaste={handlePaste}>
+      {Array.from({ length: 6 }).map((_, i) => (
+        <input
+          key={i}
+          ref={(el) => { inputs.current[i] = el; }}
+          type="text"
+          inputMode="numeric"
+          maxLength={1}
+          value={value[i] ?? ""}
+          onChange={(e) => handleChange(i, e.target.value)}
+          onKeyDown={(e) => handleKeyDown(i, e)}
+          className={`w-11 h-12 text-center text-lg font-bold rounded-lg border transition-all duration-150 bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
+            value[i]
+              ? "border-primary text-foreground"
+              : "border-border text-muted-foreground"
+          }`}
+        />
+      ))}
+    </div>
+  );
+}
+
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function LoginPage() {
   const router = useRouter();
+
+  // "login" or "register" tab
   const [mode, setMode] = useState<"login" | "register">("login");
-  const [step, setStep] = useState(0); // 0=credentials, 1=skills, 2=companies
+
+  // register steps: 0 = credentials, 1 = verify email, 2 = onboarding
+  const [step, setStep] = useState(0);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
+
+  // Resend cooldown (seconds)
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -92,21 +166,36 @@ export default function LoginPage() {
     school: "",
     major: "",
   });
-  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
-  const [selectedCompanies, setSelectedCompanies] = useState<string[]>([]);
+
+  // Step 1: verification code
+  const [otpValue, setOtpValue] = useState("");
+
+  // Step 2: onboarding
+  const [selectedLang, setSelectedLang] = useState<string | null>(null);
+  const [selectedJob, setSelectedJob] = useState<string | null>(null);
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
     setError(null);
   };
 
-  const toggleSkill = (s: string) =>
-    setSelectedSkills((prev) => prev.includes(s) ? prev.filter((x) => x !== s) : [...prev, s]);
+  const startCooldown = useCallback(() => {
+    setResendCooldown(60);
+    if (cooldownRef.current) clearInterval(cooldownRef.current);
+    cooldownRef.current = setInterval(() => {
+      setResendCooldown((prev) => {
+        if (prev <= 1) {
+          clearInterval(cooldownRef.current!);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  }, []);
 
-  const toggleCompany = (c: string) =>
-    setSelectedCompanies((prev) => prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]);
+  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
-  // Login: single step
+  // ── Login handler ──────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
@@ -121,30 +210,66 @@ export default function LoginPage() {
     }
   };
 
-  // Register step 0 → validate and advance
-  const handleCredentialsNext = (e: React.FormEvent) => {
+  // ── Step 0: submit credentials → call register() → email sent ─────────────
+  const handleCredentialsSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     if (!form.name.trim()) return setError("Name is required.");
     if (!form.email.trim()) return setError("Email is required.");
     if (form.password.length < 8) return setError("Password must be at least 8 characters.");
-    setStep(1);
+    setLoading(true);
+    try {
+      await register(form.name, form.email, form.password, form.school, form.major);
+      startCooldown();
+      setStep(1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // Register final submit (step 2)
-  const handleRegisterSubmit = async () => {
+  // ── Step 1: verify email code ─────────────────────────────────────────────
+  const handleVerifyCode = async () => {
+    if (otpValue.replace(/\s/g, "").length < 6) return setError("Enter the full 6-digit code.");
     setError(null);
     setLoading(true);
     try {
-      await register(
-        form.name, form.email, form.password,
-        form.school, form.major,
-        selectedSkills, selectedCompanies,
-      );
+      await verifyEmail(form.email, otpValue.trim());
+      setStep(2);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Invalid or expired code.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResend = async () => {
+    if (resendCooldown > 0) return;
+    try {
+      await resendVerification(form.email);
+      startCooldown();
+      setOtpValue("");
+      setError(null);
+    } catch {
+      // silently ignore — backend always returns 200
+    }
+  };
+
+  // ── Step 2: save onboarding preferences → dashboard ───────────────────────
+  const handleOnboardingSubmit = async () => {
+    setError(null);
+    setLoading(true);
+    try {
+      if (selectedLang || selectedJob) {
+        await updateMe({
+          skills: selectedLang ? [selectedLang] : [],
+          dream_job: selectedJob ?? "",
+        });
+      }
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
-      setStep(0);
     } finally {
       setLoading(false);
     }
@@ -154,8 +279,9 @@ export default function LoginPage() {
     setMode(m);
     setStep(0);
     setError(null);
-    setSelectedSkills([]);
-    setSelectedCompanies([]);
+    setOtpValue("");
+    setSelectedLang(null);
+    setSelectedJob(null);
   };
 
   return (
@@ -185,23 +311,25 @@ export default function LoginPage() {
 
         <Card className="border-border bg-card shadow-2xl">
           <CardHeader className="pb-4">
-            {/* Tab toggle */}
-            <div className="flex gap-1 p-1 rounded-lg bg-muted/40 border border-border">
-              {(["login", "register"] as const).map((m) => (
-                <button
-                  key={m}
-                  onClick={() => switchMode(m)}
-                  className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
-                    mode === m
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "text-muted-foreground hover:text-foreground"
-                  }`}
-                >
-                  {m === "login" ? <LogIn className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
-                  {m === "login" ? "Sign In" : "Create Account"}
-                </button>
-              ))}
-            </div>
+            {/* Tab toggle — hide on verify/onboarding steps */}
+            {(mode === "login" || step === 0) && (
+              <div className="flex gap-1 p-1 rounded-lg bg-muted/40 border border-border">
+                {(["login", "register"] as const).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => switchMode(m)}
+                    className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-md text-sm font-medium transition-all duration-150 ${
+                      mode === m
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-muted-foreground hover:text-foreground"
+                    }`}
+                  >
+                    {m === "login" ? <LogIn className="w-3.5 h-3.5" /> : <UserPlus className="w-3.5 h-3.5" />}
+                    {m === "login" ? "Sign In" : "Create Account"}
+                  </button>
+                ))}
+              </div>
+            )}
           </CardHeader>
 
           <CardContent>
@@ -251,11 +379,11 @@ export default function LoginPage() {
                   initial={{ opacity: 0, x: -16 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -16 }}
-                  onSubmit={handleCredentialsNext}
+                  onSubmit={handleCredentialsSubmit}
                   className="space-y-3"
                 >
                   <StepDots step={0} total={3} />
-                  <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 3 — Your account</p>
+                  <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 3 — Create your account</p>
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Full Name</label>
@@ -294,94 +422,139 @@ export default function LoginPage() {
                     </div>
                   </div>
                   {error && <ErrorBanner message={error} />}
-                  <Button type="submit" size="lg"
+                  <Button type="submit" size="lg" disabled={loading}
                     className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground mt-1">
-                    Next <ChevronRight className="w-4 h-4" />
+                    {loading ? <Spinner label="Creating account…" /> : <><UserPlus className="w-4 h-4" /> Continue</>}
                   </Button>
                 </motion.form>
               )}
 
-              {/* ── REGISTER STEP 1: skills ── */}
+              {/* ── REGISTER STEP 1: email verification ── */}
               {mode === "register" && step === 1 && (
                 <motion.div
                   key="reg-1"
                   initial={{ opacity: 0, x: 16 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -16 }}
-                  className="space-y-4"
+                  className="space-y-5"
                 >
                   <StepDots step={1} total={3} />
-                  <div className="text-center -mt-2">
-                    <p className="text-sm font-semibold text-foreground">Your Skills</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Step 2 of 3 — Pick what you know</p>
+
+                  {/* Icon + heading */}
+                  <div className="flex flex-col items-center gap-2 -mt-2">
+                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                      <Mail className="w-6 h-6 text-primary" />
+                    </div>
+                    <p className="text-sm font-semibold text-foreground">Check your inbox</p>
+                    <p className="text-xs text-muted-foreground text-center leading-relaxed">
+                      We sent a 6-digit code to{" "}
+                      <span className="text-foreground font-medium">{form.email}</span>.
+                      Copy and paste it below.
+                    </p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto pr-1">
-                    {SKILL_OPTIONS.map((s) => (
-                      <Chip key={s} label={s} selected={selectedSkills.includes(s)} onClick={() => toggleSkill(s)} />
-                    ))}
-                  </div>
+                  <OtpInput value={otpValue} onChange={(v) => { setOtpValue(v); setError(null); }} />
 
-                  {selectedSkills.length > 0 && (
-                    <p className="text-xs text-primary font-medium">{selectedSkills.length} skill{selectedSkills.length !== 1 ? "s" : ""} selected</p>
-                  )}
+                  {error && <ErrorBanner message={error} />}
 
-                  <div className="flex gap-2 pt-1">
-                    <Button type="button" variant="outline" onClick={() => setStep(0)}
-                      className="flex-1 gap-1 border-border">
-                      <ChevronLeft className="w-4 h-4" /> Back
-                    </Button>
-                    <Button type="button" onClick={() => setStep(2)}
-                      className="flex-1 gap-1 bg-primary hover:bg-primary/90 text-primary-foreground">
-                      Next <ChevronRight className="w-4 h-4" />
-                    </Button>
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled={loading || otpValue.replace(/\s/g, "").length < 6}
+                    onClick={handleVerifyCode}
+                    className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  >
+                    {loading ? <Spinner label="Verifying…" /> : <><Check className="w-4 h-4" /> Verify Code</>}
+                  </Button>
+
+                  {/* Resend */}
+                  <div className="text-center">
+                    <button
+                      type="button"
+                      onClick={handleResend}
+                      disabled={resendCooldown > 0}
+                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
+                    </button>
                   </div>
                 </motion.div>
               )}
 
-              {/* ── REGISTER STEP 2: dream companies ── */}
+              {/* ── REGISTER STEP 2: onboarding — coding lang + dream job ── */}
               {mode === "register" && step === 2 && (
                 <motion.div
                   key="reg-2"
                   initial={{ opacity: 0, x: 16 }}
                   animate={{ opacity: 1, x: 0 }}
                   exit={{ opacity: 0, x: -16 }}
-                  className="space-y-4"
+                  className="space-y-5"
                 >
                   <StepDots step={2} total={3} />
+
                   <div className="text-center -mt-2">
-                    <p className="text-sm font-semibold text-foreground">Dream Companies</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Step 3 of 3 — Where do you want to work?</p>
+                    <p className="text-sm font-semibold text-foreground">Set up your profile</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Step 3 of 3 — Personalize your experience</p>
                   </div>
 
-                  <div className="flex flex-wrap gap-2 max-h-52 overflow-y-auto pr-1">
-                    {COMPANY_OPTIONS.map((c) => (
-                      <Chip key={c} label={c} selected={selectedCompanies.includes(c)} onClick={() => toggleCompany(c)} />
-                    ))}
+                  {/* Favorite coding language */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <Code2 className="w-3.5 h-3.5 text-primary" />
+                      <p className="text-xs font-semibold text-foreground">Favorite coding language</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                      {CODING_LANGUAGES.map((lang) => (
+                        <Chip
+                          key={lang}
+                          label={lang}
+                          selected={selectedLang === lang}
+                          onClick={() => setSelectedLang(selectedLang === lang ? null : lang)}
+                        />
+                      ))}
+                    </div>
                   </div>
 
-                  {selectedCompanies.length > 0 && (
-                    <p className="text-xs text-primary font-medium">{selectedCompanies.length} compan{selectedCompanies.length !== 1 ? "ies" : "y"} selected</p>
-                  )}
+                  {/* Dream job role */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-1.5">
+                      <Briefcase className="w-3.5 h-3.5 text-primary" />
+                      <p className="text-xs font-semibold text-foreground">Dream job role</p>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
+                      {DREAM_JOB_ROLES.map((role) => (
+                        <Chip
+                          key={role}
+                          label={role}
+                          selected={selectedJob === role}
+                          onClick={() => setSelectedJob(selectedJob === role ? null : role)}
+                        />
+                      ))}
+                    </div>
+                  </div>
 
                   {error && <ErrorBanner message={error} />}
 
-                  <div className="flex gap-2 pt-1">
-                    <Button type="button" variant="outline" onClick={() => setStep(1)}
-                      className="flex-1 gap-1 border-border">
-                      <ChevronLeft className="w-4 h-4" /> Back
-                    </Button>
-                    <Button type="button" disabled={loading} onClick={handleRegisterSubmit}
-                      className="flex-1 gap-2 bg-primary hover:bg-primary/90 text-primary-foreground">
-                      {loading ? <Spinner label="Creating…" /> : <><UserPlus className="w-4 h-4" /> Create Account</>}
-                    </Button>
-                  </div>
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled={loading}
+                    onClick={handleOnboardingSubmit}
+                    className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
+                  >
+                    {loading ? <Spinner label="Saving…" /> : <><Sparkles className="w-4 h-4" /> Go to Dashboard</>}
+                  </Button>
+
+                  <p className="text-center text-xs text-muted-foreground">
+                    You can always update these in your settings.
+                  </p>
                 </motion.div>
               )}
 
             </AnimatePresence>
 
-            {/* Sign in / Sign up switch */}
+            {/* Sign in / Sign up switch — only on initial steps */}
             {mode === "login" ? (
               <p className="text-center text-xs text-muted-foreground mt-4">
                 Don&apos;t have an account?{" "}
@@ -400,11 +573,11 @@ export default function LoginPage() {
           </CardContent>
         </Card>
 
-        <p className="text-center mt-6">
-          <Badge variant="outline" className="text-[10px] border-border text-muted-foreground">
+        <div className="text-center mt-6">
+          <span className="inline-flex items-center px-3 py-1 rounded-full text-[10px] border border-border text-muted-foreground">
             Free · No credit card required
-          </Badge>
-        </p>
+          </span>
+        </div>
       </motion.div>
     </div>
   );

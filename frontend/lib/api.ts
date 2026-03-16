@@ -72,6 +72,8 @@ export interface User {
   major: string;
   skills: string[];
   dream_companies: string[];
+  dream_job: string;
+  is_verified: boolean;
 }
 
 export interface AuthResponse {
@@ -123,12 +125,37 @@ export async function getMe(): Promise<User> {
   return apiFetch<User>("/auth/me");
 }
 
-export async function updateMe(updates: Partial<Pick<User, "name" | "school" | "major">>): Promise<User> {
+export async function updateMe(
+  updates: Partial<Pick<User, "name" | "school" | "major" | "skills" | "dream_companies" | "dream_job">>
+): Promise<User> {
   return apiFetch<User>("/auth/me", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
+}
+
+export async function verifyEmail(email: string, code: string): Promise<User> {
+  return apiFetch<User>("/auth/verify-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, code }),
+    skipAuth: true,
+  });
+}
+
+export async function resendVerification(email: string): Promise<void> {
+  await apiFetch<unknown>("/auth/resend-verification", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+    skipAuth: true,
+  });
+}
+
+export async function deleteAccount(): Promise<void> {
+  await apiFetch<void>("/auth/me", { method: "DELETE" });
+  clearToken();
 }
 
 // ─── Resume Analysis ──────────────────────────────────────────────────────────

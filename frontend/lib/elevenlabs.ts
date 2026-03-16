@@ -1,7 +1,7 @@
 const ELEVENLABS_API_KEY = process.env.NEXT_PUBLIC_ELEVENLABS_API_KEY ?? "";
 
-// Rachel — natural, clear voice
-const VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
+// Adam — pre-made voice available on free tier
+const VOICE_ID = "pNInz6obpgDQGcFmaJgB";
 
 export async function speakText(text: string): Promise<HTMLAudioElement> {
   const response = await fetch(

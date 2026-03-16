@@ -5,6 +5,7 @@ from app.config import get_settings
 from app.database import init_db
 from app.routers import auth, resume, jobs, dashboard, interview
 from app.models import analysis, user, practice  # noqa: F401 — ensure tables are registered
+from app.models import log  # noqa: F401
 
 settings = get_settings()
 
