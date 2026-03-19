@@ -101,7 +101,7 @@ async def summarize_job_description(jd_text: str) -> str:
     try:
         import httpx
         from groq import Groq
-        with httpx.Client(proxy=None) as http_client:
+        with httpx.Client(trust_env=False) as http_client:
             client = Groq(api_key=settings.groq_api_key, http_client=http_client)
             prompt = (
                 "Summarize the following job description in exactly 2-3 sentences. "
@@ -131,7 +131,7 @@ async def generate_suggestions(
     try:
         import httpx
         from groq import Groq
-        with httpx.Client(proxy=None) as http_client:
+        with httpx.Client(trust_env=False) as http_client:
             client = Groq(api_key=settings.groq_api_key, http_client=http_client)
 
             prompt = (

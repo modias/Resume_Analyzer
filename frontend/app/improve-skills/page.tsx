@@ -51,6 +51,7 @@ interface Question {
   question: string;
   hint: string;
   category: string;
+  ideal_answer?: string;
 }
 
 interface AnswerResult {
@@ -134,6 +135,7 @@ export default function ImproveSkillsPage() {
           answer: answer.trim(),
           language: language.trim(),
           hint: questions[i].hint,
+          ideal_answer: questions[i].ideal_answer ?? "",
         }),
       });
 
@@ -533,7 +535,14 @@ export default function ImproveSkillsPage() {
                             {result.ideal_answer && (
                               <div className="p-3 rounded-lg bg-primary/5 border border-primary/15 space-y-2">
                                 <p className="text-xs font-medium text-primary uppercase tracking-wide">Model Answer</p>
-                                <p className="text-sm text-muted-foreground leading-relaxed">{result.ideal_answer}</p>
+                                {result.ideal_answer.split(/\n\n+/).map((block, bi) => {
+                                  const isCode = /^\s*(def |class |function |return |public |SELECT |INSERT |import |from |for |while |\w+\(|\w+\s*=)/.test(block) || block.includes('\n  ') || block.includes('\n    ');
+                                  return isCode ? (
+                                    <pre key={bi} className="text-xs text-green-300 bg-black/30 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">{block.trim()}</pre>
+                                  ) : (
+                                    <p key={bi} className="text-sm text-muted-foreground leading-relaxed">{block.trim()}</p>
+                                  );
+                                })}
                               </div>
                             )}
                           </motion.div>

@@ -295,7 +295,14 @@ async def linkedin_callback(
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=10,
             )
-            token_resp.raise_for_status()
+            if not token_resp.is_success:
+                logger.warning(
+                    "LinkedIn token exchange failed: status=%s body=%s",
+                    token_resp.status_code,
+                    token_resp.text,
+                )
+                return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+
             access_token = token_resp.json()["access_token"]
 
             # 2. Fetch LinkedIn profile via OpenID Connect userinfo
@@ -304,16 +311,17 @@ async def linkedin_callback(
                 headers={"Authorization": f"Bearer {access_token}"},
                 timeout=10,
             )
-            profile_resp.raise_for_status()
+            if not profile_resp.is_success:
+                logger.warning(
+                    "LinkedIn userinfo failed: status=%s body=%s",
+                    profile_resp.status_code,
+                    profile_resp.text,
+                )
+                return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+
             profile = profile_resp.json()
     except Exception as exc:
-        # Log the full response body for debugging
-        body = ""
-        try:
-            body = token_resp.text if 'token_resp' in dir() else ""
-        except Exception:
-            pass
-        logger.warning("LinkedIn OAuth failed: %s | body: %s", exc, body)
+        logger.warning("LinkedIn OAuth exception: %s", exc)
         return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
 
     li_id: str = profile.get("sub", "")
