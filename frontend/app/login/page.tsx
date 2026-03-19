@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, RefreshCw, Mail, Code2, Briefcase } from "lucide-react";
-import { login, register, verifyEmail, resendVerification, updateMe, isAuthenticated } from "@/lib/api";
+import { login, register, verifyEmail, resendVerification, updateMe, isAuthenticated, setToken, setCachedUser } from "@/lib/api";
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -142,11 +142,36 @@ function OtpInput({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
 export default function LoginPage() {
   const router = useRouter();
 
   useEffect(() => {
     if (isAuthenticated()) {
+      router.replace("/dashboard");
+      return;
+    }
+
+    // Handle LinkedIn OAuth redirect — ?token=...&user=...
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+    const userParam = params.get("user");
+    const liError = params.get("li_error");
+
+    if (liError) {
+      window.history.replaceState({}, "", "/login");
+      setError("LinkedIn sign-in failed. Make sure the LinkedIn app has 'Sign In with LinkedIn using OpenID Connect' enabled and the redirect URI is set correctly.");
+      return;
+    }
+
+    if (token) {
+      setToken(token);
+      if (userParam) {
+        try {
+          setCachedUser(JSON.parse(decodeURIComponent(userParam)));
+        } catch { /* ignore parse errors */ }
+      }
       router.replace("/dashboard");
     }
   }, [router]);
@@ -351,6 +376,8 @@ export default function LoginPage() {
                   onSubmit={handleLogin}
                   className="space-y-3"
                 >
+                  <LinkedInButton />
+                  <Divider />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Email</label>
                     <Input type="email" value={form.email} onChange={update("email")}
@@ -390,6 +417,8 @@ export default function LoginPage() {
                 >
                   <StepDots step={0} total={3} />
                   <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 3 — Create your account</p>
+                  <LinkedInButton label="Sign up with LinkedIn" />
+                  <Divider />
 
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Full Name</label>
@@ -590,6 +619,37 @@ export default function LoginPage() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function LinkedInButton({ label = "Continue with LinkedIn" }: { label?: string }) {
+  const [pending, setPending] = useState(false);
+  return (
+    <a
+      href={`${API_BASE}/auth/linkedin`}
+      onClick={() => setPending(true)}
+      className="flex w-full items-center justify-center gap-2.5 px-4 py-2.5 rounded-lg border border-[#0A66C2]/40 bg-[#0A66C2]/10 hover:bg-[#0A66C2]/20 text-sm font-semibold text-[#5599e0] transition-colors"
+    >
+      {pending ? (
+        <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+          className="w-4 h-4 border-2 border-[#0A66C2]/30 border-t-[#0A66C2] rounded-full" />
+      ) : (
+        <svg className="w-4 h-4 text-[#0A66C2]" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+        </svg>
+      )}
+      {pending ? "Redirecting to LinkedIn…" : label}
+    </a>
+  );
+}
+
+function Divider() {
+  return (
+    <div className="flex items-center gap-3 my-1">
+      <div className="flex-1 h-px bg-border" />
+      <span className="text-xs text-muted-foreground">or</span>
+      <div className="flex-1 h-px bg-border" />
+    </div>
+  );
+}
 
 function ErrorBanner({ message }: { message: string }) {
   return (

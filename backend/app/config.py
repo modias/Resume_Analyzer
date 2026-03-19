@@ -11,6 +11,11 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     rapidapi_key: str = ""
 
+    # LinkedIn OAuth
+    linkedin_client_id: str = ""
+    linkedin_client_secret: str = ""
+    frontend_url: str = "http://localhost:3000"
+
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 
     allowed_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3003"

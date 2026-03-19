@@ -33,6 +33,7 @@ async def _migrate(conn) -> None:
         "ALTER TABLE users ADD COLUMN verification_code TEXT",
         "ALTER TABLE users ADD COLUMN verification_expires_at DATETIME",
         "ALTER TABLE users ADD COLUMN dream_job VARCHAR(120) DEFAULT ''",
+        "ALTER TABLE users ADD COLUMN linkedin_id VARCHAR(120)",
     ]:
         try:
             await conn.execute(text(sql))

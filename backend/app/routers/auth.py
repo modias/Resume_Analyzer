@@ -1,8 +1,11 @@
 import json
 import logging
 import datetime
+import urllib.parse
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -19,6 +22,7 @@ from app.schemas.user import (
     ResendVerificationRequest,
     UserLogOut,
 )
+from app.config import get_settings
 from app.services.auth import hash_password, verify_password, create_access_token, get_current_user
 from app.services.email import generate_verification_code, send_verification_email, CODE_EXPIRY_MINUTES
 
@@ -233,6 +237,128 @@ async def delete_me(
     await db.flush()
     await db.delete(current_user)
     await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# LinkedIn OAuth
+# ---------------------------------------------------------------------------
+
+_LI_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
+_LI_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
+_LI_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
+
+
+@router.get("/linkedin")
+async def linkedin_login():
+    """Redirect the user to LinkedIn's authorization page."""
+    s = get_settings()
+    if not s.linkedin_client_id:
+        raise HTTPException(status_code=503, detail="LinkedIn OAuth is not configured on this server.")
+    redirect_uri = "http://localhost:8000/auth/linkedin/callback"
+    params = {
+        "response_type": "code",
+        "client_id": s.linkedin_client_id,
+        "redirect_uri": redirect_uri,
+        "scope": "openid profile email",
+    }
+    url = f"{_LI_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    return RedirectResponse(url=url)
+
+
+@router.get("/linkedin/callback")
+async def linkedin_callback(
+    code: str | None = None,
+    error: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Exchange LinkedIn auth code for a user profile and issue a JWT."""
+    s = get_settings()
+    frontend_url = s.frontend_url or "http://localhost:3000"
+
+    if error or not code:
+        return RedirectResponse(url=f"{frontend_url}/login?li_error=access_denied")
+
+    redirect_uri = "http://localhost:8000/auth/linkedin/callback"
+
+    # 1. Exchange code for access token
+    try:
+        async with httpx.AsyncClient() as client:
+            token_resp = await client.post(
+                _LI_TOKEN_URL,
+                data={
+                    "grant_type": "authorization_code",
+                    "code": code,
+                    "redirect_uri": redirect_uri,
+                    "client_id": s.linkedin_client_id,
+                    "client_secret": s.linkedin_client_secret,
+                },
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+                timeout=10,
+            )
+            token_resp.raise_for_status()
+            access_token = token_resp.json()["access_token"]
+
+            # 2. Fetch LinkedIn profile via OpenID Connect userinfo
+            profile_resp = await client.get(
+                _LI_USERINFO_URL,
+                headers={"Authorization": f"Bearer {access_token}"},
+                timeout=10,
+            )
+            profile_resp.raise_for_status()
+            profile = profile_resp.json()
+    except Exception as exc:
+        # Log the full response body for debugging
+        body = ""
+        try:
+            body = token_resp.text if 'token_resp' in dir() else ""
+        except Exception:
+            pass
+        logger.warning("LinkedIn OAuth failed: %s | body: %s", exc, body)
+        return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+
+    li_id: str = profile.get("sub", "")
+    email: str = profile.get("email", "")
+    name: str = profile.get("name", profile.get("given_name", "LinkedIn User"))
+
+    if not li_id:
+        return RedirectResponse(url=f"{frontend_url}/login?li_error=no_profile")
+
+    # 3. Find or create user
+    user: User | None = None
+
+    # Try by linkedin_id first
+    result = await db.execute(select(User).where(User.linkedin_id == li_id))
+    user = result.scalar_one_or_none()
+
+    # Try by email if we have one
+    if not user and email:
+        result = await db.execute(select(User).where(User.email == email))
+        user = result.scalar_one_or_none()
+        if user:
+            user.linkedin_id = li_id
+
+    # Create new user
+    if not user:
+        fallback_email = email or f"li_{li_id}@linkedin.local"
+        user = User(
+            name=name,
+            email=fallback_email,
+            hashed_password="",
+            linkedin_id=li_id,
+            is_verified=True,
+        )
+        db.add(user)
+        await db.flush()
+        logger.info("New LinkedIn user created: id=%s email=%s", user.id, fallback_email)
+
+    await db.commit()
+    await db.refresh(user)
+
+    # 4. Issue JWT and redirect to frontend
+    jwt = create_access_token({"sub": str(user.id)})
+    user_out = _to_user_out(user)
+    encoded_user = urllib.parse.quote(user_out.model_dump_json())
+    return RedirectResponse(url=f"{frontend_url}/login?token={jwt}&user={encoded_user}")
 
 
 # ---------------------------------------------------------------------------
