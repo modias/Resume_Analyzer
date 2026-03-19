@@ -4,11 +4,12 @@ from functools import lru_cache
 
 class Settings(BaseSettings):
     secret_key: str = "dev-secret-key-change-in-production"
-    access_token_expire_minutes: int = 60
+    access_token_expire_minutes: int = 10080  # 7 days
     algorithm: str = "HS256"
 
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    rapidapi_key: str = ""
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 

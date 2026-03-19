@@ -3,6 +3,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 // ─── Token storage ────────────────────────────────────────────────────────────
 
 const TOKEN_KEY = "ii_access_token";
+const USER_KEY = "ii_user";
 
 export function getToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -15,10 +16,25 @@ export function setToken(token: string): void {
 
 export function clearToken(): void {
   localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(USER_KEY);
 }
 
 export function isAuthenticated(): boolean {
   return !!getToken();
+}
+
+export function getCachedUser(): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(USER_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setCachedUser(user: User): void {
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
@@ -97,6 +113,7 @@ export async function register(
     skipAuth: true,
   });
   setToken(data.access_token);
+  setCachedUser(data.user);
   return data;
 }
 
@@ -111,6 +128,7 @@ export async function login(
     skipAuth: true,
   });
   setToken(data.access_token);
+  setCachedUser(data.user);
   return data;
 }
 
@@ -128,11 +146,13 @@ export async function getMe(): Promise<User> {
 export async function updateMe(
   updates: Partial<Pick<User, "name" | "school" | "major" | "skills" | "dream_companies" | "dream_job">>
 ): Promise<User> {
-  return apiFetch<User>("/auth/me", {
+  const user = await apiFetch<User>("/auth/me", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
+  setCachedUser(user);
+  return user;
 }
 
 export async function verifyEmail(email: string, code: string): Promise<User> {
@@ -151,6 +171,15 @@ export async function resendVerification(email: string): Promise<void> {
     body: JSON.stringify({ email }),
     skipAuth: true,
   });
+}
+
+export async function hasUploadedResume(): Promise<boolean> {
+  try {
+    const data = await apiFetch<{ has_resume: boolean }>("/resume/has-uploaded");
+    return data.has_resume;
+  } catch {
+    return false;
+  }
 }
 
 export async function deleteAccount(): Promise<void> {
@@ -243,6 +272,10 @@ export interface Job {
   required_skills: string[];
   market_frequency: number;
   salary_estimate: string;
+  apply_link: string;
+  location: string;
+  employer_logo: string;
+  posted_at: string;
 }
 
 // ─── Skill Progress ───────────────────────────────────────────────────────────

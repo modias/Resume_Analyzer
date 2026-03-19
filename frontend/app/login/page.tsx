@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, RefreshCw, Mail, Code2, Briefcase } from "lucide-react";
-import { login, register, verifyEmail, resendVerification, updateMe } from "@/lib/api";
+import { login, register, verifyEmail, resendVerification, updateMe, isAuthenticated } from "@/lib/api";
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -144,6 +144,12 @@ function OtpInput({
 
 export default function LoginPage() {
   const router = useRouter();
+
+  useEffect(() => {
+    if (isAuthenticated()) {
+      router.replace("/dashboard");
+    }
+  }, [router]);
 
   // "login" or "register" tab
   const [mode, setMode] = useState<"login" | "register">("login");

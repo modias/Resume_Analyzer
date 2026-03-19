@@ -1,7 +1,7 @@
 import json
 from fastapi import APIRouter, Depends, File, Form, UploadFile, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func
 from app.database import get_db
 from app.models.user import User
 from app.models.analysis import Analysis
@@ -73,6 +73,19 @@ async def analyze_resume(
         missing_skills=score_data["missing_skills"],
         suggestions=[OptimizationSuggestion(**s) for s in suggestions_raw],
     )
+
+
+@router.get("/has-uploaded")
+async def has_uploaded(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Returns whether the user has at least one saved resume analysis."""
+    result = await db.execute(
+        select(func.count()).select_from(Analysis).where(Analysis.user_id == current_user.id)
+    )
+    count = result.scalar_one()
+    return {"has_resume": count > 0, "count": count}
 
 
 @router.get("/history", response_model=list[AnalysisOut])
