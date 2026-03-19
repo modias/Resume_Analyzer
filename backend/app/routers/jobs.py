@@ -1,5 +1,6 @@
 import json
 import logging
+from typing import Literal
 
 from fastapi import APIRouter, Query, Depends
 from app.schemas.jobs import JobOut, DemandLevel
@@ -10,6 +11,9 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+
+EmploymentType = Literal["INTERN", "FULLTIME", "PARTTIME", "CONTRACTOR"]
+DatePosted = Literal["all", "today", "3days", "week", "month"]
 
 # Mock data — used when RAPIDAPI_KEY is not configured
 _MOCK_JOBS: list[dict] = [
@@ -66,23 +70,42 @@ _MOCK_JOBS: list[dict] = [
 
 @router.get("", response_model=list[JobOut])
 async def list_jobs(
-    q: str = Query("", description="Search by company or role"),
+    # Live search / API params (sent to JSearch)
+    search: str = Query("", description="Job title or keyword (overrides dream job default)"),
+    location: str = Query("", description="City, state or country (e.g. 'New York, NY')"),
+    employment_type: EmploymentType = Query("INTERN", description="INTERN | FULLTIME | PARTTIME | CONTRACTOR"),
+    date_posted: DatePosted = Query("week", description="all | today | 3days | week | month"),
+    remote_only: bool = Query(False, description="Return only remote positions"),
+    page: int = Query(1, ge=1, description="Page number for pagination"),
+    # Client-side filters (applied after fetching)
+    q: str = Query("", description="Filter results by company or role name"),
     demand: DemandLevel | None = Query(None, description="Filter by demand level"),
     min_score: float = Query(0, ge=0, le=100, description="Minimum match score"),
     current_user: User = Depends(get_current_user),
 ):
     user_skills: list[str] = json.loads(current_user.skills or "[]")
 
-    # Build search query from user's dream job + generic intern term
-    dream_job = current_user.dream_job or "software engineer"
-    search_query = f"{dream_job} intern"
+    # Build the JSearch query: use explicit search param, else fall back to dream job
+    if search.strip():
+        api_query = search.strip()
+    else:
+        dream_job = current_user.dream_job or "software engineer"
+        suffix = "" if employment_type != "INTERN" else " intern"
+        api_query = f"{dream_job}{suffix}"
 
-    # Try live LinkedIn/Indeed data via JSearch
-    live_jobs = await fetch_linkedin_jobs(search_query, user_skills)
+    live_jobs = await fetch_linkedin_jobs(
+        query=api_query,
+        user_skills=user_skills,
+        location=location,
+        employment_type=employment_type,
+        date_posted=date_posted,
+        remote_only=remote_only,
+        page=page,
+    )
 
     results: list[dict] = live_jobs if live_jobs else _MOCK_JOBS
 
-    # Apply filters
+    # Client-side filters
     if q:
         ql = q.lower()
         results = [j for j in results if ql in j["company"].lower() or ql in j["role"].lower()]

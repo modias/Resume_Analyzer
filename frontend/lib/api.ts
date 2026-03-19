@@ -301,12 +301,29 @@ export async function getSkillProgress(): Promise<SkillProgress[]> {
   return apiFetch<SkillProgress[]>("/interview/progress");
 }
 
+export type EmploymentType = "INTERN" | "FULLTIME" | "PARTTIME" | "CONTRACTOR";
+export type DatePosted = "all" | "today" | "3days" | "week" | "month";
+
 export async function getJobs(params?: {
+  // Live search / API params
+  search?: string;
+  location?: string;
+  employment_type?: EmploymentType;
+  date_posted?: DatePosted;
+  remote_only?: boolean;
+  page?: number;
+  // Client-side filters
   q?: string;
   demand?: string;
   min_score?: number;
 }): Promise<Job[]> {
   const qs = new URLSearchParams();
+  if (params?.search) qs.set("search", params.search);
+  if (params?.location) qs.set("location", params.location);
+  if (params?.employment_type) qs.set("employment_type", params.employment_type);
+  if (params?.date_posted) qs.set("date_posted", params.date_posted);
+  if (params?.remote_only) qs.set("remote_only", "true");
+  if (params?.page && params.page > 1) qs.set("page", String(params.page));
   if (params?.q) qs.set("q", params.q);
   if (params?.demand) qs.set("demand", params.demand);
   if (params?.min_score !== undefined) qs.set("min_score", String(params.min_score));

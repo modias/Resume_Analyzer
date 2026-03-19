@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,10 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight } from "lucide-react";
 import Link from "next/link";
-import { getJobs, getMe, hasUploadedResume, type Job } from "@/lib/api";
+import { getJobs, getMe, hasUploadedResume, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
 
 function MatchBadge({ score }: { score: number }) {
   const color =
@@ -41,41 +42,92 @@ function DemandBadge({ level }: { level: string }) {
 }
 
 export default function JobsPage() {
-  const [query, setQuery] = useState("");
+  // Live search filters (sent to API)
+  const [search, setSearch] = useState("");
+  const [location, setLocation] = useState("");
+  const [employmentType, setEmploymentType] = useState<EmploymentType>("INTERN");
+  const [datePosted, setDatePosted] = useState<DatePosted>("week");
+  const [remoteOnly, setRemoteOnly] = useState(false);
+  const [page, setPage] = useState(1);
+
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Job | null>(null);
   const [dreamCompanies, setDreamCompanies] = useState<string[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
 
-  useEffect(() => {
-    getJobs()
+  // Debounce ref for search/location inputs
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchJobs = useCallback((params: {
+    search: string; location: string; employmentType: EmploymentType;
+    datePosted: DatePosted; remoteOnly: boolean; page: number;
+  }) => {
+    setLoading(true);
+    getJobs({
+      search: params.search || undefined,
+      location: params.location || undefined,
+      employment_type: params.employmentType,
+      date_posted: params.datePosted,
+      remote_only: params.remoteOnly || undefined,
+      page: params.page,
+    })
       .then(setJobs)
       .catch(() => setJobs([]))
       .finally(() => setLoading(false));
-
-    getMe()
-      .then((u) => setDreamCompanies(u.dream_companies ?? []))
-      .catch(() => {});
-
-    hasUploadedResume().then(setHasResume);
   }, []);
+
+  // On mount
+  useEffect(() => {
+    fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page });
+    getMe().then((u) => setDreamCompanies(u.dream_companies ?? [])).catch(() => {});
+    hasUploadedResume().then(setHasResume);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Debounced refetch when text inputs change
+  const triggerSearch = (overrides: Partial<{
+    search: string; location: string; employmentType: EmploymentType;
+    datePosted: DatePosted; remoteOnly: boolean; page: number;
+  }> = {}) => {
+    const params = {
+      search, location, employmentType, datePosted, remoteOnly, page: 1,
+      ...overrides,
+    };
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchJobs(params), 500);
+  };
+
+  const handleSearchChange = (v: string) => { setSearch(v); triggerSearch({ search: v, page: 1 }); };
+  const handleLocationChange = (v: string) => { setLocation(v); triggerSearch({ location: v, page: 1 }); };
+
+  const handleTypeChange = (v: EmploymentType) => {
+    setEmploymentType(v); setPage(1);
+    fetchJobs({ search, location, employmentType: v, datePosted, remoteOnly, page: 1 });
+  };
+  const handleDateChange = (v: DatePosted) => {
+    setDatePosted(v); setPage(1);
+    fetchJobs({ search, location, employmentType, datePosted: v, remoteOnly, page: 1 });
+  };
+  const handleRemoteToggle = () => {
+    const next = !remoteOnly; setRemoteOnly(next); setPage(1);
+    fetchJobs({ search, location, employmentType, datePosted, remoteOnly: next, page: 1 });
+  };
+  const handlePageChange = (next: number) => {
+    setPage(next);
+    fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page: next });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
 
   const isDream = (company: string) =>
     dreamCompanies.some((d) => d.toLowerCase() === company.toLowerCase());
 
-  const filtered = jobs.filter(
-    (j) =>
-      j.company.toLowerCase().includes(query.toLowerCase()) ||
-      j.role.toLowerCase().includes(query.toLowerCase())
-  );
-
   const sorted = [
-    ...filtered.filter((j) => isDream(j.company)),
-    ...filtered.filter((j) => !isDream(j.company)),
+    ...jobs.filter((j) => isDream(j.company)),
+    ...jobs.filter((j) => !isDream(j.company)),
   ];
 
-  const dreamCount = filtered.filter((j) => isDream(j.company)).length;
+  const dreamCount = jobs.filter((j) => isDream(j.company)).length;
 
   return (
     <div className="space-y-6">
@@ -126,18 +178,69 @@ export default function JobsPage() {
 
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <Card className="border-border bg-card">
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-3">
+          <CardHeader className="pb-3 space-y-3">
+            {/* Row 1: search + location */}
+            <div className="flex flex-col sm:flex-row gap-2">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
                   className="pl-9 bg-muted/40 border-border focus:border-primary/50"
-                  placeholder="Search internship roles..."
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search jobs (e.g. 'data scientist', 'frontend engineer')"
+                  value={search}
+                  onChange={(e) => handleSearchChange(e.target.value)}
                 />
               </div>
-              <Badge variant="secondary" className="whitespace-nowrap text-xs">
+              <div className="relative sm:w-48">
+                <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                <Input
+                  className="pl-9 bg-muted/40 border-border focus:border-primary/50"
+                  placeholder="Location (optional)"
+                  value={location}
+                  onChange={(e) => handleLocationChange(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Row 2: filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <Select value={employmentType} onValueChange={(v) => handleTypeChange(v as EmploymentType)}>
+                <SelectTrigger className="h-8 w-36 text-xs bg-muted/40 border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="INTERN">Internship</SelectItem>
+                  <SelectItem value="FULLTIME">Full-time</SelectItem>
+                  <SelectItem value="PARTTIME">Part-time</SelectItem>
+                  <SelectItem value="CONTRACTOR">Contract</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={datePosted} onValueChange={(v) => handleDateChange(v as DatePosted)}>
+                <SelectTrigger className="h-8 w-32 text-xs bg-muted/40 border-border">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="3days">Last 3 days</SelectItem>
+                  <SelectItem value="week">This week</SelectItem>
+                  <SelectItem value="month">This month</SelectItem>
+                  <SelectItem value="all">All time</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <button
+                onClick={handleRemoteToggle}
+                className={`flex items-center gap-1.5 h-8 px-3 rounded-md border text-xs font-medium transition-colors ${
+                  remoteOnly
+                    ? "bg-primary/15 border-primary/40 text-primary"
+                    : "bg-muted/40 border-border text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <Wifi className="w-3.5 h-3.5" />
+                Remote only
+              </button>
+
+              <Badge variant="secondary" className="whitespace-nowrap text-xs ml-auto">
                 {loading ? "…" : `${sorted.length} roles`}
               </Badge>
             </div>
@@ -146,6 +249,11 @@ export default function JobsPage() {
             {loading ? (
               <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
+              </div>
+            ) : sorted.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
+                <Search className="w-8 h-8 opacity-30" />
+                <p className="text-sm">No jobs found. Try different search terms or filters.</p>
               </div>
             ) : (
               <Table>
@@ -185,6 +293,33 @@ export default function JobsPage() {
                   ))}
                 </TableBody>
               </Table>
+            )}
+
+            {/* Pagination */}
+            {!loading && sorted.length > 0 && (
+              <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  disabled={page <= 1}
+                  onClick={() => handlePageChange(page - 1)}
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                  Previous
+                </Button>
+                <span className="text-xs text-muted-foreground">Page {page}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs"
+                  disabled={sorted.length < 10}
+                  onClick={() => handlePageChange(page + 1)}
+                >
+                  Next
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>

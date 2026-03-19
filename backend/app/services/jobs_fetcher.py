@@ -101,24 +101,44 @@ def _salary_str(job: dict[str, Any]) -> str:
 async def fetch_linkedin_jobs(
     query: str,
     user_skills: list[str],
+    location: str = "",
+    employment_type: str = "INTERN",
+    date_posted: str = "week",
+    remote_only: bool = False,
+    page: int = 1,
 ) -> list[dict[str, Any]]:
     """
     Call JSearch (1 request per unique query) and return dicts shaped like JobOut.
     Results are cached for CACHE_TTL_SECONDS to avoid burning API quota.
     Returns [] when RAPIDAPI_KEY is not set.
+
+    Args:
+        query: Job title / keyword search
+        user_skills: User's skills for match scoring
+        location: City, state or country to filter by (e.g. "New York, NY")
+        employment_type: Comma-separated types — INTERN, FULLTIME, PARTTIME, CONTRACTOR
+        date_posted: One of: all, today, 3days, week, month
+        remote_only: Return only remote positions
+        page: Page number (1-based, each page ~10 results)
     """
     settings = get_settings()
     if not settings.rapidapi_key:
         return []
 
-    # Check cache first
-    cache_key = query.lower().strip()
+    # Cache key includes all params that change the API result
+    cache_key = "|".join([
+        query.lower().strip(),
+        location.lower().strip(),
+        employment_type.upper(),
+        date_posted,
+        str(remote_only).lower(),
+        str(page),
+    ])
     cached = _CACHE.get(cache_key)
     if cached:
         ts, data = cached
         if time.time() - ts < CACHE_TTL_SECONDS:
-            logger.info("JSearch cache hit for '%s'", query)
-            # Re-score with current user skills (no extra API call)
+            logger.info("JSearch cache hit for '%s'", cache_key)
             return _rescore(data, user_skills)
 
     headers = {
@@ -126,19 +146,21 @@ async def fetch_linkedin_jobs(
         "X-RapidAPI-Host": _HOST,
     }
 
+    params: dict[str, str] = {
+        "query": query,
+        "page": str(page),
+        "num_pages": "1",
+        "employment_types": employment_type.upper(),
+        "date_posted": date_posted,
+    }
+    if location:
+        params["location"] = location
+    if remote_only:
+        params["remote_jobs_only"] = "true"
+
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get(
-                _JSEARCH_URL,
-                headers=headers,
-                params={
-                    "query": query,
-                    "page": "1",
-                    "num_pages": "1",        # 1 API call per fetch
-                    "employment_types": "INTERN",
-                        "date_posted": "week",
-                },
-            )
+            resp = await client.get(_JSEARCH_URL, headers=headers, params=params)
             resp.raise_for_status()
             raw = resp.json().get("data", [])
     except Exception as exc:
