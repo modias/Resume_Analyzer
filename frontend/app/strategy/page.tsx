@@ -1,15 +1,17 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, Legend, Cell,
 } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { applicationTimelineData, matchScoreBuckets } from "@/lib/mock";
-import { Lightbulb, Rocket, TrendingUp, BarChart2 } from "lucide-react";
+import { getDashboardStats, type DashboardStats } from "@/lib/api";
+import { Lightbulb, TrendingUp, BarChart2, FileSearch, Loader2 } from "lucide-react";
+import Link from "next/link";
 
 const tooltipStyle = {
   contentStyle: {
@@ -23,6 +25,20 @@ const tooltipStyle = {
 const BUCKET_COLORS = ["#374151", "#4b5563", "#6366f1", "#818cf8", "#a78bfa"];
 
 export default function StrategyPage() {
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    getDashboardStats()
+      .then(setStats)
+      .catch(() => setStats(null))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const matchScore = stats?.match_score ?? 0;
+  const gap = Math.max(0, 72 - matchScore);
+  const topGaps = stats?.skill_gaps?.slice(0, 3) ?? [];
+
   return (
     <div className="space-y-6">
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
@@ -30,7 +46,41 @@ export default function StrategyPage() {
         <p className="text-muted-foreground text-sm mt-1">Data-driven insights to maximize your callback rate</p>
       </motion.div>
 
-      {/* Insight Callout */}
+      {/* Loading */}
+      {loading && (
+        <div className="flex items-center justify-center py-16">
+          <Loader2 className="w-6 h-6 animate-spin text-primary" />
+        </div>
+      )}
+
+      {/* No analysis yet */}
+      {!loading && (!stats || stats.total_analyses === 0) && (
+        <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className="border-dashed border-border bg-card">
+            <CardContent className="flex flex-col items-center justify-center py-16 gap-4 text-center">
+              <div className="w-14 h-14 rounded-full bg-primary/10 flex items-center justify-center">
+                <FileSearch className="w-7 h-7 text-primary" />
+              </div>
+              <div>
+                <p className="text-base font-semibold text-foreground">Analyze your resume first</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  We need your resume analysis to generate personalized strategy insights.
+                </p>
+              </div>
+              <Link href="/analyze">
+                <Badge className="cursor-pointer bg-primary/20 text-primary border-primary/30 hover:bg-primary/30 transition-colors px-4 py-1.5 text-xs">
+                  Go to Analyze Resume →
+                </Badge>
+              </Link>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
+
+      {/* Strategy content — only shown when analysis data exists */}
+      {!loading && stats && stats.total_analyses > 0 && (<>
+
+      {/* Key Insight Callout */}
       <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
         <Card className="border-primary/30 bg-gradient-to-r from-primary/10 to-purple-500/10">
           <CardContent className="p-5 flex items-start gap-4">
@@ -40,17 +90,35 @@ export default function StrategyPage() {
             <div>
               <p className="text-sm font-semibold text-foreground mb-1">Key Insight</p>
               <p className="text-sm text-muted-foreground">
-                If your match score exceeds{" "}
-                <span className="text-foreground font-semibold">72%</span>,{" "}
-                callback probability increases by{" "}
-                <span className="text-primary font-bold">38%</span>.{" "}
-                You are currently at <span className="text-yellow-400 font-semibold">63%</span> — just 9% away.
+                {matchScore >= 72 ? (
+                  <>
+                    Your match score of{" "}
+                    <span className="text-green-400 font-semibold">{matchScore}%</span>{" "}
+                    already exceeds the{" "}
+                    <span className="text-foreground font-semibold">72%</span> threshold — you have a{" "}
+                    <span className="text-primary font-bold">+38%</span> higher callback probability than average.
+                  </>
+                ) : (
+                  <>
+                    If your match score exceeds{" "}
+                    <span className="text-foreground font-semibold">72%</span>,{" "}
+                    callback probability increases by{" "}
+                    <span className="text-primary font-bold">38%</span>.{" "}
+                    You are currently at{" "}
+                    <span className="text-yellow-400 font-semibold">{matchScore}%</span>
+                    {gap > 0 && <> — just <span className="text-foreground font-semibold">{gap}%</span> away.</>}
+                  </>
+                )}
               </p>
-              <div className="flex gap-2 mt-3">
-                <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">+AWS → +4%</Badge>
-                <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">+Tableau → +3%</Badge>
-                <Badge className="bg-primary/20 text-primary border-primary/30 text-xs">Quantify bullet → +2%</Badge>
-              </div>
+              {topGaps.length > 0 && (
+                <div className="flex gap-2 mt-3 flex-wrap">
+                  {topGaps.map((g) => (
+                    <Badge key={g.skill} className="bg-primary/20 text-primary border-primary/30 text-xs">
+                      +{g.skill}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
@@ -64,6 +132,7 @@ export default function StrategyPage() {
               <TrendingUp className="w-4 h-4 text-primary" />
               Applications vs Callbacks Over Time
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Industry benchmark data</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={260}>
@@ -81,9 +150,7 @@ export default function StrategyPage() {
                   tickLine={false}
                 />
                 <Tooltip {...tooltipStyle} />
-                <Legend
-                  wrapperStyle={{ fontSize: "12px", color: "hsl(215 20% 55%)" }}
-                />
+                <Legend wrapperStyle={{ fontSize: "12px", color: "hsl(215 20% 55%)" }} />
                 <Line
                   type="monotone"
                   dataKey="applications"
@@ -114,6 +181,7 @@ export default function StrategyPage() {
               <BarChart2 className="w-4 h-4 text-primary" />
               Match Score Buckets vs Interview Rate
             </CardTitle>
+            <p className="text-xs text-muted-foreground">Industry benchmark data</p>
           </CardHeader>
           <CardContent>
             <ResponsiveContainer width="100%" height={240}>
@@ -146,13 +214,7 @@ export default function StrategyPage() {
         </Card>
       </motion.div>
 
-      {/* CTA */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }} className="flex justify-center pb-4">
-        <Button size="lg" className="gap-2 bg-primary hover:bg-primary/90 text-primary-foreground px-10">
-          <Rocket className="w-4 h-4" />
-          Optimize My Strategy
-        </Button>
-      </motion.div>
+      </>)}
     </div>
   );
 }
