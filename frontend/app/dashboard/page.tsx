@@ -4,9 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { StatCard } from "@/components/cards/StatCard";
-import { SkillBarChart } from "@/components/charts/SkillBarChart";
 import {
   skillBreakdowns, type SkillBreakdown,
   internConversionOverall, internConversionByCompany, conversionFactors,
@@ -252,7 +250,8 @@ export default function DashboardPage() {
   const toggleFollow = (id: number) =>
     setFollowingSet((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
 

@@ -304,6 +304,55 @@ export async function getSkillProgress(): Promise<SkillProgress[]> {
 export type EmploymentType = "INTERN" | "FULLTIME" | "PARTTIME" | "CONTRACTOR";
 export type DatePosted = "all" | "today" | "3days" | "week" | "month";
 
+// ─── Applications ─────────────────────────────────────────────────────────────
+
+export interface ApplicationRecord {
+  id: number;
+  company: string;
+  role: string;
+  status: string;
+  applied_at: string;
+}
+
+export interface TimelinePoint {
+  week: string;
+  applications: number;
+  callbacks: number;
+}
+
+export async function logApplication(
+  company: string,
+  role: string,
+  status = "applied"
+): Promise<ApplicationRecord> {
+  return apiFetch<ApplicationRecord>("/applications", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ company, role, status }),
+  });
+}
+
+export async function updateApplicationStatus(
+  id: number,
+  status: string
+): Promise<ApplicationRecord> {
+  return apiFetch<ApplicationRecord>(`/applications/${id}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  });
+}
+
+export async function getApplications(): Promise<ApplicationRecord[]> {
+  return apiFetch<ApplicationRecord[]>("/applications");
+}
+
+export async function getApplicationTimeline(): Promise<TimelinePoint[]> {
+  return apiFetch<TimelinePoint[]>("/applications/timeline");
+}
+
+// ─── Jobs ─────────────────────────────────────────────────────────────────────
+
 export async function getJobs(params?: {
   // Live search / API params
   search?: string;

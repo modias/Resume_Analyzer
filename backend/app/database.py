@@ -34,8 +34,19 @@ async def _migrate(conn) -> None:
         "ALTER TABLE users ADD COLUMN verification_expires_at DATETIME",
         "ALTER TABLE users ADD COLUMN dream_job VARCHAR(120) DEFAULT ''",
         "ALTER TABLE users ADD COLUMN linkedin_id VARCHAR(120)",
+        # applications table safety net (create_all handles this, but kept for old DBs)
+        """
+        CREATE TABLE IF NOT EXISTS applications (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            company VARCHAR(255) DEFAULT '',
+            role VARCHAR(255) DEFAULT '',
+            status VARCHAR(50) DEFAULT 'applied',
+            applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+        """,
     ]:
         try:
             await conn.execute(text(sql))
         except Exception:
-            pass  # column already exists
+            pass  # column/table already exists

@@ -14,6 +14,34 @@ settings = get_settings()
 CODE_LENGTH = 6
 CODE_EXPIRY_MINUTES = 15
 
+# Values copied from .env.example — treated as "not configured" so we use dev print mode
+# instead of failing SMTP auth against Gmail with fake credentials.
+_PLACEHOLDER_SMTP_USERS = frozenset(
+    {
+        "your-email@gmail.com",
+        "youremail@gmail.com",
+        "yourgmail@gmail.com",
+    }
+)
+_PLACEHOLDER_SMTP_PASSWORDS = frozenset(
+    {
+        "your-app-password",
+        "your_app_password_here",
+        "your-app-password-here",
+    }
+)
+
+
+def is_smtp_configured() -> bool:
+    """Return True when real SMTP credentials are set (not empty and not template placeholders)."""
+    u = (settings.smtp_user or "").strip().lower()
+    p = (settings.smtp_password or "").strip().lower()
+    if not u or u in _PLACEHOLDER_SMTP_USERS:
+        return False
+    if not p or p in _PLACEHOLDER_SMTP_PASSWORDS:
+        return False
+    return True
+
 
 def generate_verification_code() -> str:
     return "".join(random.choices(string.digits, k=CODE_LENGTH))
@@ -27,7 +55,7 @@ async def send_verification_email(to_email: str, code: str, name: str = "") -> N
     """
     greeting = f"Hi {name}," if name else "Hi there,"
 
-    if not settings.smtp_user:
+    if not is_smtp_configured():
         logger.info("[DEV] Email verification code for %s: %s", to_email, code)
         print(f"\n{'='*50}")
         print(f"[DEV] Verification code for {to_email}")

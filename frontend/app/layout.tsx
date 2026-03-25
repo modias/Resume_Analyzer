@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import { AppProviders } from "@/components/providers/AppProviders";
 import { ShellWrapper } from "@/components/shell/ShellWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
@@ -24,7 +25,9 @@ export default function RootLayout({
         }} />
       </head>
       <body className={inter.className}>
-        <ShellWrapper>{children}</ShellWrapper>
+        <AppProviders>
+          <ShellWrapper>{children}</ShellWrapper>
+        </AppProviders>
       </body>
     </html>
   );

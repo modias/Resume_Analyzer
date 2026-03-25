@@ -7,8 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2, Volume2, Loader2 } from "lucide-react";
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2, Volume2, Loader2, Info } from "lucide-react";
 import { analyzeResume, type AnalyzeResponse } from "@/lib/api";
+import { getCoverageStatHint } from "@/lib/coverageStatHints";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { speakText, buildAnalysisSummary } from "@/lib/elevenlabs";
 
 export default function AnalyzePage() {
@@ -23,7 +25,6 @@ export default function AnalyzePage() {
   const [applied, setApplied] = useState<Set<number>>(new Set());
   const [speaking, setSpeaking] = useState(false);
   const [speakError, setSpeakError] = useState<string | null>(null);
-  const [speakingJd, setSpeakingJd] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -291,14 +292,35 @@ export default function AnalyzePage() {
                 { label: "Required Coverage", value: result.required_coverage, color: "#6366f1" },
                 { label: "Preferred Coverage", value: result.preferred_coverage, color: "#8b5cf6" },
                 { label: "Quantified Impact", value: result.quantified_impact, color: "#ec4899" },
-              ].map((card) => (
-                <div key={card.label} className="rounded-xl border border-border bg-muted/20 p-3 text-center">
-                  <p className="text-2xl font-bold" style={{ color: card.color }}>
-                    {card.value.toFixed(0)}%
-                  </p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{card.label}</p>
-                </div>
-              ))}
+              ].map((card) => {
+                const hint = getCoverageStatHint(card.label);
+                return (
+                  <div key={card.label} className="rounded-xl border border-border bg-muted/20 p-3 text-center">
+                    <p className="text-2xl font-bold" style={{ color: card.color }}>
+                      {card.value.toFixed(0)}%
+                    </p>
+                    <div className="flex items-center justify-center gap-0.5 mt-0.5">
+                      <p className="text-[10px] text-muted-foreground">{card.label}</p>
+                      {hint && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button
+                              type="button"
+                              aria-label={hint}
+                              className="inline-flex shrink-0 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-1 focus-visible:ring-ring rounded"
+                            >
+                              <Info className="w-2.5 h-2.5" />
+                            </button>
+                          </TooltipTrigger>
+                          <TooltipContent side="top" align="center">
+                            {hint}
+                          </TooltipContent>
+                        </Tooltip>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
 
             {/* Skills side by side */}
