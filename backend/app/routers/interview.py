@@ -9,10 +9,11 @@ from fastapi import APIRouter, HTTPException, Depends
 logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from app.config import get_settings
 from app.database import get_db
-from app.models.practice import PracticeAttempt, DIFFICULTY_SCORE
+from app.models.practice import PracticeAttempt
+from app.question_scoring import compute_question_metrics
 from app.services.auth import get_optional_user
 from app.models.user import User
 
@@ -303,6 +304,23 @@ class SkillProgressResponse(BaseModel):
     languages: list[LanguageAttemptStats]
 
 
+class QuestionScoreItem(BaseModel):
+    score: int = Field(ge=0, le=100)
+    difficulty: str
+
+
+class SavePracticeSessionRequest(BaseModel):
+    language: str
+    difficulty: str
+    questions: list[QuestionScoreItem] = Field(min_length=1)
+
+
+class SavePracticeSessionResponse(BaseModel):
+    status: str
+    raw_accuracy: float
+    weighted_score: float
+
+
 @router.post("/questions", response_model=list[InterviewQuestion])
 async def generate_questions(req: QuestionRequest):
     if not settings.groq_api_key:
@@ -530,14 +548,19 @@ async def check_answer(req: CheckAnswerRequest):
     return _local_evaluate(req.question, req.answer, req.hint, req.ideal_answer)
 
 
-@router.post("/save-session")
+@router.post("/save-session", response_model=SavePracticeSessionResponse)
 async def save_session(
-    req: QuestionRequest,
+    req: SavePracticeSessionRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_optional_user),
 ):
-    difficulty = req.difficulty.lower()
-    score = DIFFICULTY_SCORE.get(difficulty, 25.0)
+    difficulty = req.difficulty.lower().strip()
+    if difficulty not in ("easy", "medium", "hard", "god"):
+        raise HTTPException(status_code=400, detail="difficulty must be easy, medium, hard, or god")
+
+    items = [{"score": q.score, "difficulty": q.difficulty} for q in req.questions]
+    metrics = compute_question_metrics(items)
+    score = metrics["weighted_score"]
 
     raw_lang = (req.language or "").strip()
     language_key = raw_lang.lower()
@@ -552,7 +575,6 @@ async def save_session(
     else:
         language_display = raw_lang
 
-    # Append a new attempt record every time the user saves a session.
     db.add(
         PracticeAttempt(
             user_id=current_user.id,
@@ -564,7 +586,11 @@ async def save_session(
     )
 
     await db.commit()
-    return {"status": "saved"}
+    return SavePracticeSessionResponse(
+        status="saved",
+        raw_accuracy=metrics["raw_accuracy"],
+        weighted_score=metrics["weighted_score"],
+    )
 
 
 @router.get("/progress", response_model=SkillProgressResponse)

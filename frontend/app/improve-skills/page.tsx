@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import { motion, AnimatePresence } from "framer-motion";
@@ -125,6 +125,7 @@ export default function ImproveSkillsPage() {
   const [practiceProgress, setPracticeProgress] = useState<PracticeProgressResponse | null>(null);
   const [selectedLanguageKey, setSelectedLanguageKey] = useState<string | null>(null);
   const currentAudio = useRef<HTMLAudioElement | null>(null);
+  const progressSavedForBatch = useRef(false);
 
   const selected = DIFFICULTIES.find((d) => d.value === difficulty)!;
 
@@ -142,9 +143,25 @@ export default function ImproveSkillsPage() {
     }
   }, [practiceProgress, selectedLanguageKey]);
 
-  const refreshProgress = () => {
+  const refreshProgress = useCallback(() => {
     getSkillProgress().then(setPracticeProgress).catch(() => {});
-  };
+  }, []);
+
+  useEffect(() => {
+    if (questions.length === 0) return;
+    const allDone = questions.every((_, i) => results[i] != null);
+    if (!allDone || progressSavedForBatch.current) return;
+    progressSavedForBatch.current = true;
+    const payload = questions.map((_, i) => ({
+      score: results[i].score,
+      difficulty,
+    }));
+    saveSkillSession(language.trim(), difficulty, payload)
+      .then(refreshProgress)
+      .catch(() => {
+        progressSavedForBatch.current = false;
+      });
+  }, [questions, results, difficulty, language, refreshProgress]);
 
   const handleGenerate = async () => {
     if (!language.trim()) {
@@ -157,6 +174,7 @@ export default function ImproveSkillsPage() {
     setRevealed(new Set());
     setAnswers({});
     setResults({});
+    progressSavedForBatch.current = false;
 
     try {
       const res = await fetch(`${API_BASE}/interview/questions`, {
@@ -172,7 +190,6 @@ export default function ImproveSkillsPage() {
 
       const data: Question[] = await res.json();
       setQuestions(data);
-      saveSkillSession(language.trim(), difficulty).then(refreshProgress).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate questions.");
     } finally {

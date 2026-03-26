@@ -4,9 +4,6 @@ from app.database import Base
 import datetime
 
 
-DIFFICULTY_SCORE = {"easy": 25.0, "medium": 50.0, "hard": 75.0, "god": 100.0}
-
-
 class PracticeSession(Base):
     __tablename__ = "practice_sessions"
 

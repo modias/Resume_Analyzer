@@ -310,15 +310,41 @@ export interface PracticeProgressResponse {
   languages: LanguageAttemptStats[];
 }
 
-export async function saveSkillSession(language: string, difficulty: string): Promise<void> {
+export interface PracticeQuestionScore {
+  score: number;
+  difficulty: string;
+}
+
+export interface SavePracticeSessionResult {
+  status: string;
+  raw_accuracy: number;
+  weighted_score: number;
+}
+
+export async function saveSkillSession(
+  language: string,
+  difficulty: string,
+  questions: PracticeQuestionScore[]
+): Promise<SavePracticeSessionResult> {
   const token = getToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  await fetch(`${API_BASE}/interview/save-session`, {
+  const response = await fetch(`${API_BASE}/interview/save-session`, {
     method: "POST",
     headers,
-    body: JSON.stringify({ language, difficulty }),
+    body: JSON.stringify({ language, difficulty, questions }),
   });
+  if (response.status === 401) {
+    clearToken();
+    throw new Error("Session expired. Please log in again.");
+  }
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(
+      (data as { detail?: string }).detail ?? `Request failed with status ${response.status}`
+    );
+  }
+  return response.json() as Promise<SavePracticeSessionResult>;
 }
 
 export async function getSkillProgress(): Promise<PracticeProgressResponse> {
