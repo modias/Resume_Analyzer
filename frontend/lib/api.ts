@@ -280,10 +280,34 @@ export interface Job {
 
 // ─── Skill Progress ───────────────────────────────────────────────────────────
 
-export interface SkillProgress {
+export type DifficultyKey = "easy" | "medium" | "hard" | "god";
+
+export interface DifficultyAttemptStats {
+  count: number;
+  avg_score: number;
+}
+
+export interface LanguageAttemptStats {
+  language_key: string;
   language: string;
-  difficulty: string;
-  score: number;
+  total_attempts: number;
+  easy: DifficultyAttemptStats;
+  medium: DifficultyAttemptStats;
+  hard: DifficultyAttemptStats;
+  god: DifficultyAttemptStats;
+}
+
+export interface OverallAttemptStats {
+  total_attempts: number;
+  easy: DifficultyAttemptStats;
+  medium: DifficultyAttemptStats;
+  hard: DifficultyAttemptStats;
+  god: DifficultyAttemptStats;
+}
+
+export interface PracticeProgressResponse {
+  overall: OverallAttemptStats;
+  languages: LanguageAttemptStats[];
 }
 
 export async function saveSkillSession(language: string, difficulty: string): Promise<void> {
@@ -297,8 +321,8 @@ export async function saveSkillSession(language: string, difficulty: string): Pr
   });
 }
 
-export async function getSkillProgress(): Promise<SkillProgress[]> {
-  return apiFetch<SkillProgress[]>("/interview/progress");
+export async function getSkillProgress(): Promise<PracticeProgressResponse> {
+  return apiFetch<PracticeProgressResponse>("/interview/progress");
 }
 
 export type EmploymentType = "INTERN" | "FULLTIME" | "PARTTIME" | "CONTRACTOR";

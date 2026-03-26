@@ -12,7 +12,7 @@ from sqlalchemy import select
 from pydantic import BaseModel
 from app.config import get_settings
 from app.database import get_db
-from app.models.practice import PracticeSession, DIFFICULTY_SCORE
+from app.models.practice import PracticeAttempt, DIFFICULTY_SCORE
 from app.services.auth import get_optional_user
 from app.models.user import User
 
@@ -275,10 +275,32 @@ class CheckAnswerResponse(BaseModel):
     ideal_answer: str
 
 
-class SkillProgress(BaseModel):
+class DifficultyAttemptStats(BaseModel):
+    count: int
+    avg_score: float
+
+
+class LanguageAttemptStats(BaseModel):
+    language_key: str
     language: str
-    difficulty: str
-    score: float
+    total_attempts: int
+    easy: DifficultyAttemptStats
+    medium: DifficultyAttemptStats
+    hard: DifficultyAttemptStats
+    god: DifficultyAttemptStats
+
+
+class OverallAttemptStats(BaseModel):
+    total_attempts: int
+    easy: DifficultyAttemptStats
+    medium: DifficultyAttemptStats
+    hard: DifficultyAttemptStats
+    god: DifficultyAttemptStats
+
+
+class SkillProgressResponse(BaseModel):
+    overall: OverallAttemptStats
+    languages: list[LanguageAttemptStats]
 
 
 @router.post("/questions", response_model=list[InterviewQuestion])
@@ -517,43 +539,133 @@ async def save_session(
     difficulty = req.difficulty.lower()
     score = DIFFICULTY_SCORE.get(difficulty, 25.0)
 
-    # Update existing session for same language or create new one
-    result = await db.execute(
-        select(PracticeSession)
-        .where(PracticeSession.user_id == current_user.id)
-        .where(PracticeSession.language == req.language.strip())
-    )
-    existing = result.scalar_one_or_none()
+    raw_lang = (req.language or "").strip()
+    language_key = raw_lang.lower()
 
-    if existing:
-        # Keep the highest difficulty attempted
-        if score > existing.score:
-            existing.score = score
-            existing.difficulty = difficulty
+    # Normalize display so "sql"/"SQL"/"Sql" all show as "SQL".
+    if language_key == "sql":
+        language_display = "SQL"
+    elif raw_lang.isupper():
+        language_display = raw_lang
+    elif raw_lang.islower():
+        language_display = raw_lang.capitalize()
     else:
-        db.add(PracticeSession(
+        language_display = raw_lang
+
+    # Append a new attempt record every time the user saves a session.
+    db.add(
+        PracticeAttempt(
             user_id=current_user.id,
-            language=req.language.strip(),
+            language_key=language_key,
+            language_display=language_display,
             difficulty=difficulty,
             score=score,
-        ))
+        )
+    )
 
     await db.commit()
     return {"status": "saved"}
 
 
-@router.get("/progress", response_model=list[SkillProgress])
+@router.get("/progress", response_model=SkillProgressResponse)
 async def get_progress(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_optional_user),
 ):
     result = await db.execute(
-        select(PracticeSession)
-        .where(PracticeSession.user_id == current_user.id)
-        .order_by(PracticeSession.score.desc())
+        select(PracticeAttempt).where(PracticeAttempt.user_id == current_user.id)
     )
-    sessions = result.scalars().all()
-    return [
-        SkillProgress(language=s.language, difficulty=s.difficulty, score=s.score)
-        for s in sessions
-    ]
+    attempts = result.scalars().all()
+
+    diff_keys = ["easy", "medium", "hard", "god"]
+
+    def _empty_level() -> DifficultyAttemptStats:
+        return DifficultyAttemptStats(count=0, avg_score=0.0)
+
+    # Overall aggregation
+    overall_counts: dict[str, int] = {k: 0 for k in diff_keys}
+    overall_score_sum: dict[str, float] = {k: 0.0 for k in diff_keys}
+
+    # Per-language aggregation
+    languages: dict[str, LanguageAttemptStats] = {}
+    levels_sums: dict[str, dict[str, float]] = {}
+    levels_counts: dict[str, dict[str, int]] = {}
+    total_by_language: dict[str, int] = {}
+
+    for a in attempts:
+        lang_key = a.language_key.lower()
+        if lang_key not in languages:
+            language_display = a.language_display
+            if lang_key == "sql":
+                language_display = "SQL"
+            languages[lang_key] = LanguageAttemptStats(
+                language_key=lang_key,
+                language=language_display,
+                total_attempts=0,
+                easy=_empty_level(),
+                medium=_empty_level(),
+                hard=_empty_level(),
+                god=_empty_level(),
+            )
+            levels_sums[lang_key] = {k: 0.0 for k in diff_keys}
+            levels_counts[lang_key] = {k: 0 for k in diff_keys}
+            total_by_language[lang_key] = 0
+
+        diff = (a.difficulty or "").lower()
+        if diff not in overall_counts:
+            continue
+
+        overall_counts[diff] += 1
+        overall_score_sum[diff] += float(a.score or 0.0)
+
+        levels_counts[lang_key][diff] += 1
+        levels_sums[lang_key][diff] += float(a.score or 0.0)
+        total_by_language[lang_key] += 1
+        languages[lang_key].total_attempts = total_by_language[lang_key]
+
+    total_attempts = len(attempts)
+
+    overall = OverallAttemptStats(
+        total_attempts=total_attempts,
+        easy=DifficultyAttemptStats(
+            count=overall_counts["easy"],
+            avg_score=(overall_score_sum["easy"] / overall_counts["easy"]) if overall_counts["easy"] else 0.0,
+        ),
+        medium=DifficultyAttemptStats(
+            count=overall_counts["medium"],
+            avg_score=(overall_score_sum["medium"] / overall_counts["medium"]) if overall_counts["medium"] else 0.0,
+        ),
+        hard=DifficultyAttemptStats(
+            count=overall_counts["hard"],
+            avg_score=(overall_score_sum["hard"] / overall_counts["hard"]) if overall_counts["hard"] else 0.0,
+        ),
+        god=DifficultyAttemptStats(
+            count=overall_counts["god"],
+            avg_score=(overall_score_sum["god"] / overall_counts["god"]) if overall_counts["god"] else 0.0,
+        ),
+    )
+
+    # Populate per-language level stats
+    for lang_key, lang_stats in languages.items():
+        counts = levels_counts.get(lang_key, {k: 0 for k in diff_keys})
+        sums = levels_sums.get(lang_key, {k: 0.0 for k in diff_keys})
+        lang_stats.easy = DifficultyAttemptStats(
+            count=counts["easy"], avg_score=(sums["easy"] / counts["easy"]) if counts["easy"] else 0.0
+        )
+        lang_stats.medium = DifficultyAttemptStats(
+            count=counts["medium"], avg_score=(sums["medium"] / counts["medium"]) if counts["medium"] else 0.0
+        )
+        lang_stats.hard = DifficultyAttemptStats(
+            count=counts["hard"], avg_score=(sums["hard"] / counts["hard"]) if counts["hard"] else 0.0
+        )
+        lang_stats.god = DifficultyAttemptStats(
+            count=counts["god"], avg_score=(sums["god"] / counts["god"]) if counts["god"] else 0.0
+        )
+
+    # Sort languages by total_attempts desc, then language name
+    language_list = sorted(
+        languages.values(),
+        key=lambda l: (-l.total_attempts, l.language),
+    )
+
+    return SkillProgressResponse(overall=overall, languages=language_list)

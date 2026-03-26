@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import { motion, AnimatePresence } from "framer-motion";
@@ -27,8 +27,9 @@ import {
   Volume2,
   VolumeX,
   Loader2,
+  TrendingUp,
 } from "lucide-react";
-import { saveSkillSession } from "@/lib/api";
+import { saveSkillSession, getSkillProgress, type PracticeProgressResponse } from "@/lib/api";
 import { speakText, buildSkillFeedbackText } from "@/lib/elevenlabs";
 
 const DIFFICULTIES = [
@@ -37,6 +38,52 @@ const DIFFICULTIES = [
   { value: "hard", label: "Hard", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
   { value: "god", label: "God Level", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
 ];
+
+/** Skill level rows for coverage breakdown bars (Easy → God). */
+const SKILL_LEVEL_BARS = [
+  { key: "easy", label: "Easy", bar: "bg-green-500", text: "text-green-400" },
+  { key: "medium", label: "Medium", bar: "bg-yellow-400", text: "text-yellow-400" },
+  { key: "hard", label: "Hard", bar: "bg-orange-500", text: "text-orange-400" },
+  { key: "god", label: "God Level", bar: "bg-red-500", text: "text-red-400" },
+] as const;
+
+type LevelKey = (typeof SKILL_LEVEL_BARS)[number]["key"];
+
+/** Aggregate 4-row difficulty chart (sessions per level). */
+function DifficultyMixRows({
+  counts,
+  totalSessions,
+}: {
+  counts: Record<LevelKey, number>;
+  totalSessions: number;
+}) {
+  return (
+    <div className="space-y-3">
+      {SKILL_LEVEL_BARS.map((row) => {
+        const count = counts[row.key];
+        const pct = totalSessions ? Math.round((count / totalSessions) * 100) : 0;
+        return (
+          <div key={row.key} className="space-y-1">
+            <div className="flex items-center justify-between text-xs">
+              <span className={`font-medium ${row.text}`}>{row.label}</span>
+              <span className="text-muted-foreground tabular-nums">
+                {count} {count === 1 ? "session" : "sessions"} · {pct}%
+              </span>
+            </div>
+            <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${pct}%` }}
+                transition={{ duration: 0.6, ease: "easeOut" }}
+                className={`h-full rounded-full ${row.bar}`}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   Fundamentals: BookOpen,
@@ -75,9 +122,29 @@ export default function ImproveSkillsPage() {
   const [results, setResults] = useState<Record<number, AnswerResult>>({});
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [loadingAudio, setLoadingAudio] = useState<Set<number>>(new Set());
-  const currentAudio = useRef<HTMLAudioElement | null>(null);;
+  const [practiceProgress, setPracticeProgress] = useState<PracticeProgressResponse | null>(null);
+  const [selectedLanguageKey, setSelectedLanguageKey] = useState<string | null>(null);
+  const currentAudio = useRef<HTMLAudioElement | null>(null);
 
   const selected = DIFFICULTIES.find((d) => d.value === difficulty)!;
+
+  useEffect(() => {
+    getSkillProgress().then(setPracticeProgress).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (!practiceProgress?.languages?.length) return;
+    if (
+      !selectedLanguageKey ||
+      !practiceProgress.languages.some((l) => l.language_key === selectedLanguageKey)
+    ) {
+      setSelectedLanguageKey(practiceProgress.languages[0].language_key);
+    }
+  }, [practiceProgress, selectedLanguageKey]);
+
+  const refreshProgress = () => {
+    getSkillProgress().then(setPracticeProgress).catch(() => {});
+  };
 
   const handleGenerate = async () => {
     if (!language.trim()) {
@@ -105,7 +172,7 @@ export default function ImproveSkillsPage() {
 
       const data: Question[] = await res.json();
       setQuestions(data);
-      saveSkillSession(language.trim(), difficulty).catch(() => {});
+      saveSkillSession(language.trim(), difficulty).then(refreshProgress).catch(() => {});
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to generate questions.");
     } finally {
@@ -120,6 +187,17 @@ export default function ImproveSkillsPage() {
       return next;
     });
   };
+
+  const overallTotalAttempts = practiceProgress?.overall.total_attempts ?? 0;
+  const overallCounts: Record<LevelKey, number> = {
+    easy: practiceProgress?.overall.easy.count ?? 0,
+    medium: practiceProgress?.overall.medium.count ?? 0,
+    hard: practiceProgress?.overall.hard.count ?? 0,
+    god: practiceProgress?.overall.god.count ?? 0,
+  };
+
+  const activeLanguage =
+    practiceProgress?.languages.find((l) => l.language_key === selectedLanguageKey) ?? null;
 
   const handleCheckAnswer = async (i: number) => {
     const answer = answers[i] ?? "";
@@ -223,6 +301,123 @@ export default function ImproveSkillsPage() {
         <p className="text-muted-foreground text-sm mt-1">
           Generate interview questions, write your answer, and get instant AI feedback.
         </p>
+      </motion.div>
+
+      {/* Skill coverage by difficulty level */}
+      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
+        <Card className="border-border bg-card">
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              Skill Coverage Breakdown
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Practice mix by difficulty — Easy (green), Medium (yellow), Hard (orange), God Level (red)
+            </p>
+          </CardHeader>
+          <CardContent className="pt-0 space-y-5">
+            {!practiceProgress || practiceProgress.overall.total_attempts === 0 ? (
+              <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
+                <p className="text-sm text-muted-foreground">No practice sessions yet.</p>
+                <p className="text-xs text-muted-foreground">Generate questions below to record your first session.</p>
+              </div>
+            ) : (
+              <>
+                <div className="space-y-3">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                    Sessions per level
+                  </p>
+                </div>
+                <div className="pt-3 border-t border-border space-y-2">
+                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                    Languages practiced
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {practiceProgress.languages.map((l) => {
+                      const countsByLevel: Record<LevelKey, number> = {
+                        easy: l.easy.count,
+                        medium: l.medium.count,
+                        hard: l.hard.count,
+                        god: l.god.count,
+                      };
+
+                      const dominantKey = (["easy", "medium", "hard", "god"] as LevelKey[]).reduce(
+                        (best, k) => (countsByLevel[k] > countsByLevel[best] ? k : best),
+                        "medium" as LevelKey
+                      );
+
+                      const row = SKILL_LEVEL_BARS.find((r) => r.key === dominantKey) ?? SKILL_LEVEL_BARS[1];
+                      const isSelected = l.language_key === selectedLanguageKey;
+
+                      return (
+                        <button
+                          key={l.language_key}
+                          type="button"
+                          onClick={() => setSelectedLanguageKey(l.language_key)}
+                          className={`px-3 py-1.5 rounded-lg border border-current/40 bg-muted/20 text-xs ${row.text} hover:bg-accent transition-colors ${
+                            isSelected ? "ring-1 ring-primary/30" : ""
+                          }`}
+                        >
+                          {l.language}
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <AnimatePresence>
+                    {activeLanguage && (
+                      <motion.div
+                        initial={{ opacity: 0, y: 6 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 6 }}
+                        className="pt-3"
+                      >
+                        <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-foreground">{activeLanguage.language}</p>
+                            <p className="text-xs text-muted-foreground tabular-nums">
+                              {activeLanguage.total_attempts} {activeLanguage.total_attempts === 1 ? "attempt" : "attempts"}
+                            </p>
+                          </div>
+
+                          <div className="space-y-3">
+                            {SKILL_LEVEL_BARS.map((row) => {
+                              const level = activeLanguage[row.key];
+                              const count = level.count;
+                              const pct = activeLanguage.total_attempts
+                                ? Math.round((count / activeLanguage.total_attempts) * 100)
+                                : 0;
+
+                              return (
+                                <div key={row.key} className="space-y-1">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className={`font-medium ${row.text}`}>{row.label}</span>
+                                    <span className="text-muted-foreground tabular-nums">
+                                      {count} {count === 1 ? "session" : "sessions"} · avg{" "}
+                                      {level.avg_score.toFixed(0)}%
+                                    </span>
+                                  </div>
+                                  <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
+                                    <motion.div
+                                      initial={{ width: 0 }}
+                                      animate={{ width: `${pct}%` }}
+                                      transition={{ duration: 0.6, ease: "easeOut" }}
+                                      className={`h-full rounded-full ${row.bar}`}
+                                    />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
+              </>
+            )}
+          </CardContent>
+        </Card>
       </motion.div>
 
       {/* Input card */}

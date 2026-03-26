@@ -50,3 +50,28 @@ async def _migrate(conn) -> None:
             await conn.execute(text(sql))
         except Exception:
             pass  # column/table already exists
+
+    # Backfill attempt history from older `practice_sessions` rows (if needed).
+    # This enables Option 1 ("real N times + averages") without losing existing practice data.
+    try:
+        await conn.execute(
+            text(
+                """
+                INSERT INTO practice_attempts (
+                    user_id, language_key, language_display, difficulty, score, created_at
+                )
+                SELECT
+                    user_id,
+                    lower(language) AS language_key,
+                    language AS language_display,
+                    difficulty,
+                    score,
+                    created_at
+                FROM practice_sessions
+                WHERE (SELECT COUNT(*) FROM practice_attempts) = 0
+                """
+            )
+        )
+    except Exception:
+        # practice_attempts may not exist yet (fresh DB) or SQL may differ.
+        pass

@@ -10,8 +10,8 @@ import {
   internConversionOverall, internConversionByCompany, conversionFactors,
   mentors, type Mentor, linkedInConnected,
 } from "@/lib/mock";
-import { getDashboardStats, getSkillProgress, type DashboardStats, type SkillProgress } from "@/lib/api";
-import { AlertTriangle, TrendingUp, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, Linkedin, UserPlus, ExternalLink, School, Link2, FileSearch, Loader2 } from "lucide-react";
+import { getDashboardStats, type DashboardStats } from "@/lib/api";
+import { AlertTriangle, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, Linkedin, UserPlus, ExternalLink, School, Link2, FileSearch, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 function CircularGauge({ value }: { value: number }) {
@@ -225,7 +225,6 @@ function MentorCard({ mentor, following, onToggle }: { mentor: Mentor; following
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
-  const [skillProgress, setSkillProgress] = useState<SkillProgress[]>([]);
   const [selectedGap, setSelectedGap] = useState<string>("");
   const [isLinkedInConnected, setIsLinkedInConnected] = useState(linkedInConnected);
   const [followingSet, setFollowingSet] = useState<Set<number>>(
@@ -240,8 +239,6 @@ export default function DashboardPage() {
       })
       .catch(() => setStats(null))
       .finally(() => setLoadingStats(false));
-
-    getSkillProgress().then(setSkillProgress).catch(() => {});
   }, []);
 
   const skillGaps = stats?.skill_gaps ?? [];
@@ -350,56 +347,6 @@ export default function DashboardPage() {
           <StatCard key={s.label} {...s} index={i} />
         ))}
       </div>
-
-      {/* Skill Level Breakdown from Improve Skills */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <Card className="border-border bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" />
-              Skill Coverage Breakdown
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">Based on your practice sessions from Improve Skills</p>
-          </CardHeader>
-          <CardContent className="pt-0">
-            {skillProgress.length === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
-                <p className="text-sm text-muted-foreground">No practice sessions yet.</p>
-                <a href="/improve-skills" className="text-xs text-primary hover:underline">Go to Improve Skills to start practicing →</a>
-              </div>
-            ) : (
-              <div className="space-y-3 pt-2">
-                {skillProgress.map((s) => {
-                  const diffColor =
-                    s.difficulty === "god" ? "#f87171" :
-                    s.difficulty === "hard" ? "#fb923c" :
-                    s.difficulty === "medium" ? "#facc15" : "#4ade80";
-                  const diffLabel =
-                    s.difficulty === "god" ? "God Level" :
-                    s.difficulty.charAt(0).toUpperCase() + s.difficulty.slice(1);
-                  return (
-                    <div key={s.language} className="space-y-1">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-medium text-foreground">{s.language}</span>
-                        <span className="font-semibold" style={{ color: diffColor }}>{diffLabel} · {s.score}%</span>
-                      </div>
-                      <div className="h-2 rounded-full bg-muted/40 overflow-hidden">
-                        <motion.div
-                          initial={{ width: 0 }}
-                          animate={{ width: `${s.score}%` }}
-                          transition={{ duration: 0.8, ease: "easeOut" }}
-                          className="h-full rounded-full"
-                          style={{ backgroundColor: diffColor }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
 
       {/* Skill Gaps + Breakdown side-by-side */}
       {skillGaps.length > 0 && (
