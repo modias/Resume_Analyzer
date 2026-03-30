@@ -49,42 +49,6 @@ const SKILL_LEVEL_BARS = [
 
 type LevelKey = (typeof SKILL_LEVEL_BARS)[number]["key"];
 
-/** Aggregate 4-row difficulty chart (sessions per level). */
-function DifficultyMixRows({
-  counts,
-  totalSessions,
-}: {
-  counts: Record<LevelKey, number>;
-  totalSessions: number;
-}) {
-  return (
-    <div className="space-y-3">
-      {SKILL_LEVEL_BARS.map((row) => {
-        const count = counts[row.key];
-        const pct = totalSessions ? Math.round((count / totalSessions) * 100) : 0;
-        return (
-          <div key={row.key} className="space-y-1">
-            <div className="flex items-center justify-between text-xs">
-              <span className={`font-medium ${row.text}`}>{row.label}</span>
-              <span className="text-muted-foreground tabular-nums">
-                {count} {count === 1 ? "session" : "sessions"} · {pct}%
-              </span>
-            </div>
-            <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
-              <motion.div
-                initial={{ width: 0 }}
-                animate={{ width: `${pct}%` }}
-                transition={{ duration: 0.6, ease: "easeOut" }}
-                className={`h-full rounded-full ${row.bar}`}
-              />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   Fundamentals: BookOpen,
   "Data Structures": Layers,
@@ -203,14 +167,6 @@ export default function ImproveSkillsPage() {
       if (next.has(i)) next.delete(i); else next.add(i);
       return next;
     });
-  };
-
-  const overallTotalAttempts = practiceProgress?.overall.total_attempts ?? 0;
-  const overallCounts: Record<LevelKey, number> = {
-    easy: practiceProgress?.overall.easy.count ?? 0,
-    medium: practiceProgress?.overall.medium.count ?? 0,
-    hard: practiceProgress?.overall.hard.count ?? 0,
-    god: practiceProgress?.overall.god.count ?? 0,
   };
 
   const activeLanguage =

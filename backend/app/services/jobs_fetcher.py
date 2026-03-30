@@ -103,6 +103,31 @@ def _strip_html(value: str) -> str:
     return re.sub(r"<[^>]+>", " ", value or "")
 
 
+def _location_matches(user_location: str, job_location: str) -> bool:
+    """
+    Loose location matching to avoid false negatives from formatting differences.
+    Examples:
+      "New York, NY" should match "New York, New York, United States"
+      "San Francisco" should match "San Francisco Bay Area"
+    """
+    u = (user_location or "").strip().lower()
+    j = (job_location or "").strip().lower()
+    if not u:
+        return True
+    if not j:
+        return False
+    if u in j:
+        return True
+
+    # Token overlap fallback (ignore very short tokens and punctuation)
+    user_tokens = [t for t in re.split(r"[^a-z0-9]+", u) if len(t) >= 2]
+    if not user_tokens:
+        return True
+    overlap = sum(1 for t in user_tokens if t in j)
+    # Match when at least half of meaningful tokens are present.
+    return overlap >= max(1, len(user_tokens) // 2)
+
+
 def _map_public_job(raw_job: dict[str, Any]) -> dict[str, Any]:
     text_parts = [
         raw_job.get("title") or "",
@@ -162,7 +187,7 @@ async def _fetch_public_jobs(
                     mapped = _map_public_job(raw_job)
                     # Keep query as a soft signal (scoring), not a hard filter.
                     # Hard filtering can drop almost everything and force fake fallback.
-                    if location and location.lower() not in (mapped["location"] or "").lower():
+                    if location and not _location_matches(location, mapped.get("location") or ""):
                         continue
                     if remote_only and "remote" not in (mapped["location"] or "").lower():
                         continue
@@ -314,6 +339,9 @@ async def fetch_linkedin_jobs(
             "employer_logo": job.get("employer_logo") or "",
             "posted_at": job.get("job_posted_at_datetime_utc") or "",
         })
+
+    if location:
+        base_jobs = [j for j in base_jobs if _location_matches(location, j.get("location") or "")]
 
     # Deduplicate by apply link when available, else company+role+location.
     deduped_base_jobs: list[dict[str, Any]] = []

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import Image from "next/image";
 import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -435,9 +436,12 @@ export default function JobsPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex items-start gap-3 min-w-0">
                     {selected.employer_logo ? (
-                      <img
+                      <Image
                         src={selected.employer_logo}
-                        alt={selected.company}
+                        alt={`${selected.company} logo`}
+                        width={40}
+                        height={40}
+                        unoptimized
                         className="w-10 h-10 rounded-lg object-contain border border-border bg-white p-1 shrink-0"
                       />
                     ) : (
