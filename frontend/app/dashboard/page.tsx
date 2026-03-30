@@ -8,10 +8,9 @@ import { StatCard } from "@/components/cards/StatCard";
 import {
   skillBreakdowns, type SkillBreakdown,
   internConversionOverall, internConversionByCompany, conversionFactors,
-  mentors, type Mentor, linkedInConnected,
 } from "@/lib/mock";
 import { getDashboardStats, type DashboardStats } from "@/lib/api";
-import { AlertTriangle, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, Linkedin, UserPlus, ExternalLink, School, Link2, FileSearch, Loader2 } from "lucide-react";
+import { AlertTriangle, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, FileSearch, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 function CircularGauge({ value }: { value: number }) {
@@ -157,85 +156,18 @@ function SkillBreakdownPanel({ breakdown }: { breakdown: SkillBreakdown }) {
   );
 }
 
-function MentorCard({ mentor, following, onToggle }: { mentor: Mentor; following: boolean; onToggle: () => void }) {
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border border-border bg-muted/20 p-4 flex flex-col gap-3 hover:border-primary/30 transition-colors duration-150"
-    >
-      {/* Top row */}
-      <div className="flex items-start gap-3">
-        <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${mentor.avatarColor} flex items-center justify-center text-xs font-bold text-white shrink-0`}>
-          {mentor.avatar}
-        </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-foreground truncate">{mentor.name}</p>
-          <p className="text-xs text-muted-foreground truncate">{mentor.title}</p>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className="text-[10px] font-semibold" style={{ color: mentor.companyColor }}>
-              {mentor.company}
-            </span>
-            <span className="text-[10px] text-muted-foreground">· {mentor.tenure}</span>
-          </div>
-        </div>
-        <a
-          href={`https://linkedin.com/in/${mentor.linkedinSlug}`}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="shrink-0 w-7 h-7 rounded-lg bg-[#0A66C2]/15 hover:bg-[#0A66C2]/30 flex items-center justify-center transition-colors"
-          title="View on LinkedIn"
-        >
-          <Linkedin className="w-3.5 h-3.5 text-[#0A66C2]" />
-        </a>
-      </div>
-
-      {/* School + mutual */}
-      <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
-        <span className="flex items-center gap-1"><School className="w-3 h-3" />{mentor.school}</span>
-        <span className="flex items-center gap-1"><Users className="w-3 h-3" />{mentor.mutualConnections} mutual</span>
-      </div>
-
-      {/* Skill overlap */}
-      <div className="flex flex-wrap gap-1">
-        {mentor.skillOverlap.map((s) => (
-          <Badge key={s} variant="secondary" className="text-[10px] bg-primary/10 text-primary border-primary/20 px-1.5 py-0">
-            {s}
-          </Badge>
-        ))}
-      </div>
-
-      {/* Follow button */}
-      <button
-        onClick={onToggle}
-        className={`w-full flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-medium border transition-all duration-150 ${
-          following
-            ? "bg-primary/15 text-primary border-primary/30 hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/20"
-            : "bg-muted/40 text-muted-foreground border-border hover:bg-primary/10 hover:text-primary hover:border-primary/30"
-        }`}
-      >
-        <UserPlus className="w-3 h-3" />
-        {following ? "Following" : "Follow"}
-      </button>
-    </motion.div>
-  );
-}
-
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
   const [selectedGap, setSelectedGap] = useState<string>("");
-  const [isLinkedInConnected, setIsLinkedInConnected] = useState(linkedInConnected);
-  const [followingSet, setFollowingSet] = useState<Set<number>>(
-    () => new Set(mentors.filter((m) => m.isFollowing).map((m) => m.id))
-  );
 
   useEffect(() => {
     getDashboardStats()
       .then((data) => {
         setStats(data);
-        if (data.skill_gaps.length > 0) setSelectedGap(data.skill_gaps[0].skill);
+        if (data.skill_gaps.length > 0) {
+          setSelectedGap(data.skill_gaps[0].skill);
+        }
       })
       .catch(() => setStats(null))
       .finally(() => setLoadingStats(false));
@@ -243,14 +175,6 @@ export default function DashboardPage() {
 
   const skillGaps = stats?.skill_gaps ?? [];
   const activeBreakdown: SkillBreakdown | undefined = skillBreakdowns[selectedGap];
-
-  const toggleFollow = (id: number) =>
-    setFollowingSet((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
 
   const scoreLabel =
     !stats || stats.match_score === 0 ? null :
@@ -416,109 +340,6 @@ export default function DashboardPage() {
         </div>
       </motion.div>
       )}
-
-      {/* LinkedIn Mentors */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
-        <Card className="border-border bg-card">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between flex-wrap gap-3">
-              <div>
-                <CardTitle className="text-base font-semibold flex items-center gap-2">
-                  <Linkedin className="w-4 h-4 text-[#0A66C2]" />
-                  People You Follow at Target Companies
-                </CardTitle>
-                <p className="text-xs text-muted-foreground mt-1">
-                  Mentors & professionals at companies on your list — their path could be yours.
-                </p>
-              </div>
-
-              {/* LinkedIn connect / connected badge */}
-              {isLinkedInConnected ? (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#0A66C2]/15 border border-[#0A66C2]/30">
-                  <div className="w-2 h-2 rounded-full bg-[#0A66C2] animate-pulse" />
-                  <span className="text-xs font-medium text-[#0A66C2]">LinkedIn connected</span>
-                  <button
-                    onClick={() => setIsLinkedInConnected(false)}
-                    className="text-[10px] text-muted-foreground hover:text-foreground ml-1 underline underline-offset-2"
-                  >
-                    Disconnect
-                  </button>
-                </div>
-              ) : (
-                <button
-                  onClick={() => setIsLinkedInConnected(true)}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg bg-[#0A66C2] hover:bg-[#005885] text-white text-xs font-semibold transition-colors duration-150 shadow-sm"
-                >
-                  <Link2 className="w-3.5 h-3.5" />
-                  Connect LinkedIn
-                </button>
-              )}
-            </div>
-
-            {/* Not-connected banner */}
-            {!isLinkedInConnected && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                className="mt-3 flex items-start gap-3 p-3 rounded-lg bg-[#0A66C2]/8 border border-[#0A66C2]/20"
-              >
-                <Linkedin className="w-4 h-4 text-[#0A66C2] shrink-0 mt-0.5" />
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Connect your LinkedIn account to automatically sync people you follow, surface warm introductions,
-                  and get notified when someone at a target company posts about internships.{" "}
-                  <span className="text-foreground font-medium">Showing sample data below.</span>
-                </p>
-              </motion.div>
-            )}
-          </CardHeader>
-
-          <CardContent className="space-y-4">
-            {/* Stats strip */}
-            <div className="flex items-center gap-4 flex-wrap text-xs text-muted-foreground">
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-primary" />
-                <strong className="text-foreground">{mentors.length}</strong> people at target companies
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-green-400" />
-                <strong className="text-foreground">{followingSet.size}</strong> following
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-yellow-400" />
-                <strong className="text-foreground">{mentors.reduce((s, m) => s + m.mutualConnections, 0)}</strong> mutual connections total
-              </span>
-            </div>
-
-            {/* Mentor grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {mentors.map((mentor) => (
-                <MentorCard
-                  key={mentor.id}
-                  mentor={mentor}
-                  following={followingSet.has(mentor.id)}
-                  onToggle={() => toggleFollow(mentor.id)}
-                />
-              ))}
-            </div>
-
-            {/* Footer CTA */}
-            <div className="flex items-center justify-between pt-1">
-              <p className="text-xs text-muted-foreground">
-                Reach out to a connection for a referral — it increases your conversion odds by{" "}
-                <span className="text-primary font-semibold">+31%</span>.
-              </p>
-              <a
-                href="https://linkedin.com/search/results/people/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-xs text-[#0A66C2] hover:underline font-medium"
-              >
-                Find more <ExternalLink className="w-3 h-3" />
-              </a>
-            </div>
-          </CardContent>
-        </Card>
-      </motion.div>
 
       {/* Intern → Part-Time Conversion */}
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>

@@ -2,8 +2,8 @@
 Fetch real internship listings from JSearch (RapidAPI).
 JSearch aggregates jobs from LinkedIn, Indeed, Glassdoor and others.
 
-Falls back to an empty list when RAPIDAPI_KEY is not configured;
-the router then serves the built-in mock data instead.
+If RAPIDAPI_KEY is missing or JSearch fails, we fall back to a public
+job-board API so users still get live jobs instead of mock-only data.
 
 Caching: results are cached in-memory for CACHE_TTL_SECONDS per unique query
 so repeated page loads don't burn API quota.
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 _JSEARCH_URL = "https://jsearch.p.rapidapi.com/search"
 _HOST = "jsearch.p.rapidapi.com"
+_PUBLIC_JOBS_URL = "https://www.arbeitnow.com/api/job-board-api"
 
 # Cache: { query_key -> (timestamp, results) }
 _CACHE: dict[str, tuple[float, list[dict[str, Any]]]] = {}
@@ -98,6 +99,114 @@ def _salary_str(job: dict[str, Any]) -> str:
     return "N/A"
 
 
+def _strip_html(value: str) -> str:
+    return re.sub(r"<[^>]+>", " ", value or "")
+
+
+def _map_public_job(raw_job: dict[str, Any]) -> dict[str, Any]:
+    text_parts = [
+        raw_job.get("title") or "",
+        raw_job.get("description") or "",
+        " ".join(raw_job.get("tags") or []),
+    ]
+    merged_text = _strip_html(" ".join(text_parts))
+    job_skills = _extract_skills(merged_text)
+    return {
+        "_job_skills": job_skills,
+        "company": raw_job.get("company_name") or "Unknown",
+        "role": raw_job.get("title") or "Internship",
+        "demand_level": "Medium",
+        "required_skills": job_skills[:8],
+        "market_frequency": 70,
+        "salary_estimate": "N/A",
+        "apply_link": raw_job.get("url") or "",
+        "location": raw_job.get("location") or "",
+        "employer_logo": "",
+        "posted_at": raw_job.get("created_at") or "",
+    }
+
+
+async def _fetch_public_jobs(
+    query: str,
+    user_skills: list[str],
+    location: str = "",
+    remote_only: bool = False,
+    page: int = 1,
+) -> list[dict[str, Any]]:
+    cache_key = "|".join(
+        [
+            "public",
+            query.lower().strip(),
+            location.lower().strip(),
+            str(remote_only).lower(),
+            str(page),
+        ]
+    )
+    cached = _CACHE.get(cache_key)
+    if cached:
+        ts, data = cached
+        if time.time() - ts < CACHE_TTL_SECONDS:
+            return _rescore(data, user_skills)
+
+    # Public endpoint returns broad data; fetch several pages and filter client-side.
+    base_jobs: list[dict[str, Any]] = []
+    page_start = max(1, page)
+    page_end = page_start + 4
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            for p in range(page_start, page_end + 1):
+                resp = await client.get(_PUBLIC_JOBS_URL, params={"page": str(p)})
+                resp.raise_for_status()
+                raw_list = (resp.json() or {}).get("data") or []
+                for raw_job in raw_list:
+                    mapped = _map_public_job(raw_job)
+                    # Keep query as a soft signal (scoring), not a hard filter.
+                    # Hard filtering can drop almost everything and force fake fallback.
+                    if location and location.lower() not in (mapped["location"] or "").lower():
+                        continue
+                    if remote_only and "remote" not in (mapped["location"] or "").lower():
+                        continue
+                    base_jobs.append(mapped)
+    except Exception as exc:
+        logger.warning("Public jobs request failed: %s", exc)
+        return []
+
+    deduped: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in base_jobs:
+        link = (item.get("apply_link") or "").strip().lower()
+        key = (
+            f"link::{link}"
+            if link
+            else "meta::"
+            + "||".join(
+                [
+                    (item.get("company") or "").strip().lower(),
+                    (item.get("role") or "").strip().lower(),
+                    (item.get("location") or "").strip().lower(),
+                ]
+            )
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+
+    _CACHE[cache_key] = (time.time(), deduped)
+    logger.info("Public jobs fetched %d jobs for '%s'", len(deduped), query)
+    ranked = _rescore(deduped, user_skills)
+    if query:
+        # Prefer jobs that mention query tokens in role/company while preserving broad coverage.
+        tokens = [t for t in re.split(r"[^a-zA-Z0-9]+", query.lower()) if len(t) >= 3][:6]
+        if tokens:
+            def query_boost(item: dict[str, Any]) -> int:
+                text = f'{item.get("role", "")} {item.get("company", "")}'.lower()
+                return sum(1 for t in tokens if t in text)
+
+            ranked.sort(key=lambda item: (query_boost(item), item.get("match_score", 0)), reverse=True)
+    return ranked
+
+
 async def fetch_linkedin_jobs(
     query: str,
     user_skills: list[str],
@@ -106,6 +215,7 @@ async def fetch_linkedin_jobs(
     date_posted: str = "week",
     remote_only: bool = False,
     page: int = 1,
+    num_pages: int = 5,
 ) -> list[dict[str, Any]]:
     """
     Call JSearch (1 request per unique query) and return dicts shaped like JobOut.
@@ -120,10 +230,18 @@ async def fetch_linkedin_jobs(
         date_posted: One of: all, today, 3days, week, month
         remote_only: Return only remote positions
         page: Page number (1-based, each page ~10 results)
+        num_pages: Number of pages to fetch per request window
     """
     settings = get_settings()
     if not settings.rapidapi_key:
-        return []
+        return await _fetch_public_jobs(
+            query=query,
+            user_skills=user_skills,
+            location=location,
+            remote_only=remote_only,
+            page=page,
+        )
+    num_pages = max(1, min(10, int(num_pages)))
 
     # Cache key includes all params that change the API result
     cache_key = "|".join([
@@ -133,6 +251,7 @@ async def fetch_linkedin_jobs(
         date_posted,
         str(remote_only).lower(),
         str(page),
+        str(num_pages),
     ])
     cached = _CACHE.get(cache_key)
     if cached:
@@ -149,7 +268,7 @@ async def fetch_linkedin_jobs(
     params: dict[str, str] = {
         "query": query,
         "page": str(page),
-        "num_pages": "1",
+        "num_pages": str(num_pages),
         "employment_types": employment_type.upper(),
         "date_posted": date_posted,
     }
@@ -165,7 +284,13 @@ async def fetch_linkedin_jobs(
             raw = resp.json().get("data", [])
     except Exception as exc:
         logger.warning("JSearch request failed: %s", exc)
-        return []
+        return await _fetch_public_jobs(
+            query=query,
+            user_skills=user_skills,
+            location=location,
+            remote_only=remote_only,
+            page=page,
+        )
 
     # Parse raw jobs (store without user-specific scores so cache is reusable)
     base_jobs: list[dict[str, Any]] = []
@@ -190,11 +315,38 @@ async def fetch_linkedin_jobs(
             "posted_at": job.get("job_posted_at_datetime_utc") or "",
         })
 
-    # Store in cache
-    _CACHE[cache_key] = (time.time(), base_jobs)
-    logger.info("JSearch fetched %d jobs for '%s' (1 API call used)", len(base_jobs), query)
+    # Deduplicate by apply link when available, else company+role+location.
+    deduped_base_jobs: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in base_jobs:
+        apply_link = (item.get("apply_link") or "").strip().lower()
+        key = (
+            f"link::{apply_link}"
+            if apply_link
+            else "meta::"
+            + "||".join(
+                [
+                    (item.get("company") or "").strip().lower(),
+                    (item.get("role") or "").strip().lower(),
+                    (item.get("location") or "").strip().lower(),
+                ]
+            )
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped_base_jobs.append(item)
 
-    return _rescore(base_jobs, user_skills)
+    # Store in cache
+    _CACHE[cache_key] = (time.time(), deduped_base_jobs)
+    logger.info(
+        "JSearch fetched %d raw / %d deduped jobs for '%s' (1 API call used)",
+        len(base_jobs),
+        len(deduped_base_jobs),
+        query,
+    )
+
+    return _rescore(deduped_base_jobs, user_skills)
 
 
 def _rescore(base_jobs: list[dict[str, Any]], user_skills: list[str]) -> list[dict[str, Any]]:

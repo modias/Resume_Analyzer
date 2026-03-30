@@ -13,7 +13,6 @@ import {
   Settings,
   TrendingUp,
   Zap,
-  Users,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
@@ -23,7 +22,6 @@ const navItems = [
   { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { label: "Analyze Resume", href: "/analyze", icon: FileSearch },
   { label: "Job Insights", href: "/jobs", icon: Briefcase },
-  { label: "Networking", href: "/networking", icon: Users },
   { label: "App Strategy", href: "/strategy", icon: Target },
   { label: "Improve Skills", href: "/improve-skills", icon: Brain },
   { label: "Settings", href: "/settings", icon: Settings },

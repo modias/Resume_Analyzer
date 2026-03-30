@@ -162,9 +162,11 @@ export default function AnalyzePage() {
                 )}
               </div>
 
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 gap-2 items-end">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide">Job Title <span className="opacity-50">opt.</span></label>
+                  <label className="h-4 flex items-center text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
+                    Job Title <span className="opacity-50">opt.</span>
+                  </label>
                   <Input
                     value={jobTitle}
                     onChange={(e) => setJobTitle(e.target.value)}
@@ -173,7 +175,7 @@ export default function AnalyzePage() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-medium text-muted-foreground uppercase tracking-wide flex items-center gap-1">
+                  <label className="h-4 flex items-center gap-1 text-[10px] font-medium text-muted-foreground uppercase tracking-wide">
                     <Building2 className="w-3 h-3" /> Company <span className="opacity-50">opt.</span>
                   </label>
                   <Input

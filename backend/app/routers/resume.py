@@ -37,6 +37,28 @@ async def analyze_resume(
         raise HTTPException(status_code=422, detail="Could not extract text from PDF")
 
     score_data = compute_match(resume_text, job_description)
+    # Keep user's skill profile in sync with resume analyses so job matching
+    # can rank openings based on the latest extracted resume skills.
+    try:
+        existing_skills = json.loads(current_user.skills or "[]")
+        if not isinstance(existing_skills, list):
+            existing_skills = []
+    except Exception:
+        existing_skills = []
+    merged_skills: list[str] = []
+    seen = set()
+    for skill in [*existing_skills, *score_data["extracted_skills"]]:
+        if not isinstance(skill, str):
+            continue
+        normalized = skill.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_skills.append(normalized)
+    current_user.skills = json.dumps(merged_skills[:80])
 
     suggestions_raw = await generate_suggestions(
         resume_text, job_description, score_data["missing_skills"]
@@ -61,6 +83,7 @@ async def analyze_resume(
         job_summary=job_summary,
     )
     db.add(analysis)
+    db.add(current_user)
     await db.commit()
 
     return AnalyzeResponse(

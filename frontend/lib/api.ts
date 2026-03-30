@@ -1,4 +1,4 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 // ─── Token storage ────────────────────────────────────────────────────────────
 
@@ -90,6 +90,8 @@ export interface User {
   dream_companies: string[];
   dream_job: string;
   is_verified: boolean;
+  linkedin_id?: string | null;
+  profile_picture_url?: string | null;
 }
 
 export interface AuthResponse {

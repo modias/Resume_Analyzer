@@ -285,7 +285,25 @@ export default function JobsPage() {
                         )}
                       </TableCell>
                       <TableCell className="font-semibold text-sm text-foreground">{job.company}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{job.role}</TableCell>
+                      <TableCell className="text-sm">
+                        {job.apply_link ? (
+                          <a
+                            href={job.apply_link}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground transition-colors underline-offset-2 hover:underline"
+                            title={`Open ${job.role} at ${job.company}`}
+                          >
+                            {job.role}
+                            <ExternalLink className="w-3 h-3 shrink-0 opacity-70" />
+                          </a>
+                        ) : (
+                          <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+                            {job.role}
+                          </span>
+                        )}
+                      </TableCell>
                       <TableCell><MatchBadge score={job.match_score} /></TableCell>
                       <TableCell><DemandBadge level={job.demand_level} /></TableCell>
                       <TableCell className="text-sm">{job.apply_priority}</TableCell>

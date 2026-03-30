@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Header } from "@/components/shell/Header";
@@ -12,9 +12,14 @@ export function ShellWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const isAuthPage = AUTH_ROUTES.some((r) => pathname.startsWith(r));
+  const [mounted, setMounted] = useState(false);
+  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    if (!isAuthPage && !isAuthenticated()) {
+    setMounted(true);
+    const ok = isAuthenticated();
+    setAuthed(ok);
+    if (!isAuthPage && !ok) {
       router.replace("/login");
     }
   }, [isAuthPage, router]);
@@ -23,7 +28,11 @@ export function ShellWrapper({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
   }
 
-  if (!isAuthenticated()) {
+  if (!mounted) {
+    return null;
+  }
+
+  if (!authed) {
     return null;
   }
 
