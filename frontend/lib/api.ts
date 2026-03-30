@@ -75,6 +75,11 @@ export async function apiFetch<T = unknown>(
     );
   }
 
+  // Some successful endpoints (e.g. DELETE /auth/me) return 204 with no body.
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json() as Promise<T>;
 }
 
@@ -182,6 +187,33 @@ export async function hasUploadedResume(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export async function uploadResume(resume: File): Promise<{ uploaded: boolean; filename: string; skills_detected: number }> {
+  const token = getToken();
+  const formData = new FormData();
+  formData.append("resume", resume);
+
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const response = await fetch(`${API_BASE}/resume/upload`, {
+    method: "POST",
+    headers,
+    body: formData,
+  });
+
+  if (response.status === 401) {
+    clearToken();
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail ?? `Upload failed (${response.status})`);
+  }
+
+  return response.json();
 }
 
 export async function deleteAccount(): Promise<void> {

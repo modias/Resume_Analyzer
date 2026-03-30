@@ -10,6 +10,7 @@ from app.services.auth import get_optional_user as get_current_user
 from app.services.pdf_parser import extract_text_from_pdf
 from app.services.match_scorer import compute_match
 from app.services.ai_suggester import generate_suggestions, summarize_job_description
+from app.services.skill_extractor import extract_skills
 
 router = APIRouter(prefix="/resume", tags=["resume"])
 
@@ -96,6 +97,74 @@ async def analyze_resume(
         missing_skills=score_data["missing_skills"],
         suggestions=[OptimizationSuggestion(**s) for s in suggestions_raw],
     )
+
+
+@router.post("/upload")
+async def upload_resume_only(
+    resume: UploadFile = File(..., description="PDF resume file"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Upload and parse a resume without running full JD analysis.
+    This marks the user as having an uploaded resume for apply-gating flows.
+    """
+    if resume.content_type not in ("application/pdf", "application/octet-stream"):
+        raise HTTPException(status_code=400, detail="Only PDF files are accepted")
+
+    file_bytes = await resume.read()
+    if len(file_bytes) > MAX_PDF_SIZE:
+        raise HTTPException(status_code=400, detail="PDF exceeds 5 MB limit")
+
+    resume_text = extract_text_from_pdf(file_bytes)
+    if not resume_text.strip():
+        raise HTTPException(status_code=422, detail="Could not extract text from PDF")
+
+    extracted = extract_skills(resume_text)
+
+    # Keep user's skill profile in sync with uploaded resume.
+    try:
+        existing_skills = json.loads(current_user.skills or "[]")
+        if not isinstance(existing_skills, list):
+            existing_skills = []
+    except Exception:
+        existing_skills = []
+    merged_skills: list[str] = []
+    seen = set()
+    for skill in [*existing_skills, *extracted]:
+        if not isinstance(skill, str):
+            continue
+        normalized = skill.strip()
+        if not normalized:
+            continue
+        key = normalized.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        merged_skills.append(normalized)
+    current_user.skills = json.dumps(merged_skills[:80])
+
+    # Store a lightweight analysis row so /resume/has-uploaded returns true.
+    analysis = Analysis(
+        user_id=current_user.id,
+        resume_filename=resume.filename or "resume.pdf",
+        job_description="Resume upload only",
+        job_title="",
+        company="",
+        match_score=0.0,
+        required_coverage=0.0,
+        preferred_coverage=0.0,
+        quantified_impact=0.0,
+        extracted_skills=json.dumps(extracted),
+        missing_skills=json.dumps([]),
+        suggestions=json.dumps([]),
+        job_summary="",
+    )
+    db.add(analysis)
+    db.add(current_user)
+    await db.commit()
+
+    return {"uploaded": True, "filename": analysis.resume_filename, "skills_detected": len(extracted)}
 
 
 @router.get("/has-uploaded")

@@ -9,9 +9,8 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight } from "lucide-react";
-import Link from "next/link";
-import { getJobs, getMe, hasUploadedResume, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
+import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { getJobs, getMe, hasUploadedResume, uploadResume, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
 
 function MatchBadge({ score }: { score: number }) {
   const color =
@@ -55,9 +54,13 @@ export default function JobsPage() {
   const [selected, setSelected] = useState<Job | null>(null);
   const [dreamCompanies, setDreamCompanies] = useState<string[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Debounce ref for search/location inputs
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const resumeInputRef = useRef<HTMLInputElement | null>(null);
 
   const fetchJobs = useCallback((params: {
     search: string; location: string; employmentType: EmploymentType;
@@ -77,11 +80,17 @@ export default function JobsPage() {
       .finally(() => setLoading(false));
   }, []);
 
-  // On mount
+  // On mount: only load jobs if user already uploaded a resume.
   useEffect(() => {
-    fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page });
-    getMe().then((u) => setDreamCompanies(u.dream_companies ?? [])).catch(() => {});
-    hasUploadedResume().then(setHasResume);
+    hasUploadedResume().then((uploaded) => {
+      setHasResume(uploaded);
+      if (!uploaded) {
+        setLoading(false);
+        return;
+      }
+      fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page });
+      getMe().then((u) => setDreamCompanies(u.dream_companies ?? [])).catch(() => {});
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -119,6 +128,39 @@ export default function JobsPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
+  const handleResumePick = () => {
+    setUploadError(null);
+    setUploadMessage(null);
+    resumeInputRef.current?.click();
+  };
+
+  const handleResumeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadError(null);
+    setUploadMessage(null);
+
+    if (file.type !== "application/pdf") {
+      setUploadError("Please upload a PDF file.");
+      e.target.value = "";
+      return;
+    }
+
+    setUploadingResume(true);
+    try {
+      await uploadResume(file);
+      setHasResume(true);
+      setUploadMessage("Resume uploaded successfully. You can apply now.");
+      fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page: 1 });
+      getMe().then((u) => setDreamCompanies(u.dream_companies ?? [])).catch(() => {});
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Failed to upload resume.");
+    } finally {
+      setUploadingResume(false);
+      e.target.value = "";
+    }
+  };
+
   const isDream = (company: string) =>
     dreamCompanies.some((d) => d.toLowerCase() === company.toLowerCase());
 
@@ -131,10 +173,35 @@ export default function JobsPage() {
 
   return (
     <div className="space-y-6">
+      <input
+        ref={resumeInputRef}
+        type="file"
+        accept=".pdf,application/pdf"
+        className="hidden"
+        onChange={handleResumeFileChange}
+      />
+
       <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
         <h1 className="text-2xl font-bold text-foreground">Job Insights</h1>
         <p className="text-muted-foreground text-sm mt-1">Internship roles matched to your profile</p>
       </motion.div>
+
+      {(uploadMessage || uploadError) && (
+        <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>
+          <Card className={uploadError ? "border-red-500/30 bg-red-500/5" : "border-green-500/30 bg-green-500/5"}>
+            <CardContent className="p-3 flex items-center gap-2">
+              {uploadError ? (
+                <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+              ) : (
+                <CheckCircle2 className="w-4 h-4 text-green-400 shrink-0" />
+              )}
+              <p className={`text-xs ${uploadError ? "text-red-300" : "text-green-300"}`}>
+                {uploadError ?? uploadMessage}
+              </p>
+            </CardContent>
+          </Card>
+        </motion.div>
+      )}
 
       {hasResume === false && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
@@ -149,19 +216,33 @@ export default function JobsPage() {
                   Upload your resume so we can verify you&apos;re a strong fit before you apply.
                 </p>
               </div>
-              <Link
-                href="/analyze"
-                className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-yellow-500/20 text-yellow-300 text-xs font-semibold hover:bg-yellow-500/30 transition-colors border border-yellow-500/30"
+              <Button
+                type="button"
+                size="sm"
+                onClick={handleResumePick}
+                disabled={uploadingResume}
+                className="shrink-0 gap-1.5 bg-yellow-500/20 text-yellow-300 text-xs font-semibold hover:bg-yellow-500/30 border border-yellow-500/30"
               >
-                <FileText className="w-3.5 h-3.5" />
-                Upload Resume
-              </Link>
+                {uploadingResume ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+                {uploadingResume ? "Uploading..." : "Upload Resume"}
+              </Button>
             </CardContent>
           </Card>
         </motion.div>
       )}
 
-      {dreamCount > 0 && (
+      {hasResume === false && (
+        <Card className="border-border bg-card">
+          <CardContent className="py-16 flex flex-col items-center justify-center gap-3 text-center">
+            <Lock className="w-8 h-8 text-yellow-400" />
+            <p className="text-sm text-muted-foreground max-w-md">
+              Upload your resume above to unlock Job Insights and view matched roles.
+            </p>
+          </CardContent>
+        </Card>
+      )}
+
+      {hasResume === true && dreamCount > 0 && (
         <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.03 }}>
           <Card className="border-yellow-500/20 bg-yellow-500/5">
             <CardContent className="p-4 flex items-center gap-3">
@@ -176,8 +257,9 @@ export default function JobsPage() {
         </motion.div>
       )}
 
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-        <Card className="border-border bg-card">
+      {hasResume === true && (
+        <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
+          <Card className="border-border bg-card">
           <CardHeader className="pb-3 space-y-3">
             {/* Row 1: search + location */}
             <div className="flex flex-col sm:flex-row gap-2">
@@ -340,11 +422,12 @@ export default function JobsPage() {
               </div>
             )}
           </CardContent>
-        </Card>
-      </motion.div>
+          </Card>
+        </motion.div>
+      )}
 
       {/* Job Detail Drawer */}
-      <Sheet open={!!selected} onOpenChange={() => setSelected(null)}>
+      <Sheet open={hasResume === true && !!selected} onOpenChange={() => setSelected(null)}>
         <SheetContent className="bg-card border-l border-border w-full sm:max-w-md overflow-y-auto">
           {selected && (
             <>
@@ -449,10 +532,16 @@ export default function JobsPage() {
                         Upload your resume first to unlock applying. We&apos;ll make sure you&apos;re a strong fit before you apply.
                       </p>
                     </div>
-                    <Link href="/analyze" className="flex w-full items-center justify-center gap-2 rounded-lg border border-primary/40 bg-primary/10 px-4 py-2.5 text-sm font-semibold text-primary hover:bg-primary/20 transition-colors">
-                      <FileText className="w-4 h-4" />
-                      Upload Resume First
-                    </Link>
+                    <Button
+                      type="button"
+                      onClick={handleResumePick}
+                      disabled={uploadingResume}
+                      className="w-full gap-2 border border-primary/40 bg-primary/10 text-primary hover:bg-primary/20"
+                      variant="outline"
+                    >
+                      {uploadingResume ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
+                      {uploadingResume ? "Uploading Resume..." : "Upload Resume First"}
+                    </Button>
                   </div>
                 ) : selected.apply_link ? (
                   <a

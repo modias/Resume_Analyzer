@@ -210,7 +210,7 @@ export default function LoginPage() {
 
   // Step 2: onboarding
   const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
-  const [selectedJob, setSelectedJob] = useState<string | null>(null);
+  const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
@@ -300,15 +300,22 @@ export default function LoginPage() {
     ));
   };
 
+  const toggleDreamJob = (role: string) => {
+    setSelectedJobs((prev) => (
+      prev.includes(role) ? prev.filter((item) => item !== role) : [...prev, role]
+    ));
+  };
+
   // ── Step 2: save onboarding preferences → dashboard ───────────────────────
   const handleOnboardingSubmit = async () => {
     setError(null);
     setLoading(true);
     try {
-      if (selectedLangs.length > 0 || selectedJob) {
+      if (selectedLangs.length > 0 || selectedJobs.length > 0) {
         await updateMe({
           skills: selectedLangs,
-          dream_job: selectedJob ?? "",
+          // Backend currently stores dream_job as a single string field.
+          dream_job: selectedJobs.join(", "),
         });
       }
       router.push("/dashboard");
@@ -325,7 +332,7 @@ export default function LoginPage() {
     setError(null);
     setOtpValue("");
     setSelectedLangs([]);
-    setSelectedJob(null);
+    setSelectedJobs([]);
   };
 
   return (
@@ -564,19 +571,19 @@ export default function LoginPage() {
                     </div>
                   </div>
 
-                  {/* Dream job role */}
+                  {/* Dream job role(s) */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5">
                       <Briefcase className="w-3.5 h-3.5 text-primary" />
-                      <p className="text-xs font-semibold text-foreground">Dream job role</p>
+                      <p className="text-xs font-semibold text-foreground">Dream job roles</p>
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
                       {DREAM_JOB_ROLES.map((role) => (
                         <Chip
                           key={role}
                           label={role}
-                          selected={selectedJob === role}
-                          onClick={() => setSelectedJob(selectedJob === role ? null : role)}
+                          selected={selectedJobs.includes(role)}
+                          onClick={() => toggleDreamJob(role)}
                         />
                       ))}
                     </div>
