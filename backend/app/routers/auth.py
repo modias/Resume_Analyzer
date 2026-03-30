@@ -7,11 +7,14 @@ import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, delete
 
 from app.database import get_db
 from app.models.user import User
 from app.models.log import UserLog
+from app.models.analysis import Analysis
+from app.models.application import Application
+from app.models.practice import PracticeSession, PracticeAttempt
 from app.schemas.user import (
     UserRegister,
     UserLogin,
@@ -235,6 +238,15 @@ async def delete_me(
 ):
     await _log(db, current_user.id, "account_deleted", f"email={current_user.email}", _client_ip(request))
     await db.flush()
+
+    # Explicit cleanup so account deletion always removes user-linked DB rows.
+    # (Some tables may not have DB-level ON DELETE CASCADE in older SQLite schemas.)
+    await db.execute(delete(Analysis).where(Analysis.user_id == current_user.id))
+    await db.execute(delete(PracticeSession).where(PracticeSession.user_id == current_user.id))
+    await db.execute(delete(PracticeAttempt).where(PracticeAttempt.user_id == current_user.id))
+    await db.execute(delete(Application).where(Application.user_id == current_user.id))
+    await db.execute(delete(UserLog).where(UserLog.user_id == current_user.id))
+
     await db.delete(current_user)
     await db.commit()
 

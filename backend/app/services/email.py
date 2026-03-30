@@ -47,6 +47,14 @@ def generate_verification_code() -> str:
     return "".join(random.choices(string.digits, k=CODE_LENGTH))
 
 
+def _print_dev_code(to_email: str, code: str) -> None:
+    logger.info("[DEV] Email verification code for %s: %s", to_email, code)
+    print(f"\n{'='*50}")
+    print(f"[DEV] Verification code for {to_email}")
+    print(f"      Code: {code}")
+    print(f"{'='*50}\n")
+
+
 async def send_verification_email(to_email: str, code: str, name: str = "") -> None:
     """Send a 6-digit verification code to the user's email.
 
@@ -56,11 +64,7 @@ async def send_verification_email(to_email: str, code: str, name: str = "") -> N
     greeting = f"Hi {name}," if name else "Hi there,"
 
     if not is_smtp_configured():
-        logger.info("[DEV] Email verification code for %s: %s", to_email, code)
-        print(f"\n{'='*50}")
-        print(f"[DEV] Verification code for {to_email}")
-        print(f"      Code: {code}")
-        print(f"{'='*50}\n")
+        _print_dev_code(to_email, code)
         return
 
     message = MIMEMultipart("alternative")
@@ -108,13 +112,55 @@ async def send_verification_email(to_email: str, code: str, name: str = "") -> N
     message.attach(MIMEText(plain, "plain"))
     message.attach(MIMEText(html, "html"))
 
-    await aiosmtplib.send(
-        message,
-        hostname=settings.smtp_host,
-        port=settings.smtp_port,
-        username=settings.smtp_user,
-        password=settings.smtp_password,
-        use_tls=True,
-    )
+    # Gmail commonly uses:
+    # - 465 with implicit TLS (use_tls=True)
+    # - 587 with STARTTLS (start_tls=True)
+    send_attempts = []
+    if settings.smtp_port == 465:
+        send_attempts = [
+            {"use_tls": True, "start_tls": False},
+            {"use_tls": False, "start_tls": True},
+        ]
+    elif settings.smtp_port == 587:
+        send_attempts = [
+            {"use_tls": False, "start_tls": True},
+            {"use_tls": True, "start_tls": False},
+        ]
+    else:
+        send_attempts = [
+            {"use_tls": False, "start_tls": True},
+            {"use_tls": True, "start_tls": False},
+        ]
 
-    logger.info("Verification email sent to %s", to_email)
+    last_exc: Exception | None = None
+    for attempt in send_attempts:
+        try:
+            await aiosmtplib.send(
+                message,
+                hostname=settings.smtp_host,
+                port=settings.smtp_port,
+                username=settings.smtp_user,
+                password=settings.smtp_password,
+                use_tls=attempt["use_tls"],
+                start_tls=attempt["start_tls"],
+            )
+            logger.info("Verification email sent to %s", to_email)
+            return
+        except Exception as exc:
+            last_exc = exc
+            logger.warning(
+                "SMTP send attempt failed for %s (host=%s port=%s use_tls=%s start_tls=%s): %s",
+                to_email,
+                settings.smtp_host,
+                settings.smtp_port,
+                attempt["use_tls"],
+                attempt["start_tls"],
+                exc,
+            )
+
+    logger.warning(
+        "All SMTP attempts failed for %s; falling back to console verification code.",
+        to_email,
+    )
+    _print_dev_code(to_email, code)
+
