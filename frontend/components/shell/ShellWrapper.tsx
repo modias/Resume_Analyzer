@@ -8,10 +8,16 @@ import { isAuthenticated } from "@/lib/api";
 
 const AUTH_ROUTES = ["/login", "/register"];
 
+/** Logged-out users can view these without redirecting to /login */
+function isPublicRoute(pathname: string): boolean {
+  if (pathname === "/") return true;
+  return AUTH_ROUTES.some((r) => pathname.startsWith(r));
+}
+
 export function ShellWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const isAuthPage = AUTH_ROUTES.some((r) => pathname.startsWith(r));
+  const isPublicPage = isPublicRoute(pathname);
   const [mounted, setMounted] = useState(false);
   const [authed, setAuthed] = useState(false);
 
@@ -19,12 +25,12 @@ export function ShellWrapper({ children }: { children: React.ReactNode }) {
     setMounted(true);
     const ok = isAuthenticated();
     setAuthed(ok);
-    if (!isAuthPage && !ok) {
+    if (!isPublicPage && !ok) {
       router.replace("/login");
     }
-  }, [isAuthPage, router]);
+  }, [isPublicPage, router]);
 
-  if (isAuthPage) {
+  if (isPublicPage) {
     return <>{children}</>;
   }
 

@@ -114,7 +114,7 @@ async def send_verification_email(to_email: str, code: str, name: str = "") -> N
         port=settings.smtp_port,
         username=settings.smtp_user,
         password=settings.smtp_password,
-        start_tls=True,
+        use_tls=True,
     )
 
     logger.info("Verification email sent to %s", to_email)

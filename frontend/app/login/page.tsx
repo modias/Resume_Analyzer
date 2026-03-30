@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -176,8 +176,15 @@ export default function LoginPage() {
     }
   }, [router]);
 
-  // "login" or "register" tab
+  // "login" or "register" tab (URL ?register=1 opens Create Account)
   const [mode, setMode] = useState<"login" | "register">("login");
+
+  useLayoutEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("register") === "1" || params.get("mode") === "register") {
+      setMode("register");
+    }
+  }, []);
 
   // register steps: 0 = credentials, 1 = verify email, 2 = onboarding
   const [step, setStep] = useState(0);
@@ -202,7 +209,7 @@ export default function LoginPage() {
   const [otpValue, setOtpValue] = useState("");
 
   // Step 2: onboarding
-  const [selectedLang, setSelectedLang] = useState<string | null>(null);
+  const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
   const [selectedJob, setSelectedJob] = useState<string | null>(null);
 
   const update = (key: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -287,14 +294,20 @@ export default function LoginPage() {
     }
   };
 
+  const toggleLanguage = (lang: string) => {
+    setSelectedLangs((prev) => (
+      prev.includes(lang) ? prev.filter((item) => item !== lang) : [...prev, lang]
+    ));
+  };
+
   // ── Step 2: save onboarding preferences → dashboard ───────────────────────
   const handleOnboardingSubmit = async () => {
     setError(null);
     setLoading(true);
     try {
-      if (selectedLang || selectedJob) {
+      if (selectedLangs.length > 0 || selectedJob) {
         await updateMe({
-          skills: selectedLang ? [selectedLang] : [],
+          skills: selectedLangs,
           dream_job: selectedJob ?? "",
         });
       }
@@ -311,7 +324,7 @@ export default function LoginPage() {
     setStep(0);
     setError(null);
     setOtpValue("");
-    setSelectedLang(null);
+    setSelectedLangs([]);
     setSelectedJob(null);
   };
 
@@ -533,19 +546,19 @@ export default function LoginPage() {
                     <p className="text-xs text-muted-foreground mt-0.5">Step 3 of 3 — Personalize your experience</p>
                   </div>
 
-                  {/* Favorite coding language */}
+                  {/* Favorite coding language(s) */}
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5">
                       <Code2 className="w-3.5 h-3.5 text-primary" />
-                      <p className="text-xs font-semibold text-foreground">Favorite coding language</p>
+                      <p className="text-xs font-semibold text-foreground">Favorite coding languages</p>
                     </div>
                     <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto pr-1">
                       {CODING_LANGUAGES.map((lang) => (
                         <Chip
                           key={lang}
                           label={lang}
-                          selected={selectedLang === lang}
-                          onClick={() => setSelectedLang(selectedLang === lang ? null : lang)}
+                          selected={selectedLangs.includes(lang)}
+                          onClick={() => toggleLanguage(lang)}
                         />
                       ))}
                     </div>
