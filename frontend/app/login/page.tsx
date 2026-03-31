@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
+import { useState, useEffect, useLayoutEffect } from "react";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, RefreshCw, Mail, Code2, Briefcase } from "lucide-react";
-import { login, register, verifyEmail, resendVerification, updateMe, isAuthenticated, setToken, setCachedUser } from "@/lib/api";
+import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, Code2, Briefcase } from "lucide-react";
+import { login, register, updateMe, isAuthenticated, setToken, setCachedUser } from "@/lib/api";
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -74,72 +74,6 @@ function StepDots({ step, total }: { step: number; total: number }) {
   );
 }
 
-// ─── OTP Input (6 boxes with paste support) ───────────────────────────────────
-
-function OtpInput({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const inputs = useRef<(HTMLInputElement | null)[]>([]);
-
-  const handleChange = (idx: number, char: string) => {
-    const clean = char.replace(/\D/g, "").slice(-1);
-    const next = value.split("").concat(Array(6).fill("")).slice(0, 6);
-    next[idx] = clean;
-    const joined = next.join("");
-    onChange(joined);
-    if (clean && idx < 5) inputs.current[idx + 1]?.focus();
-  };
-
-  const handleKeyDown = (idx: number, e: React.KeyboardEvent) => {
-    if (e.key === "Backspace") {
-      if (!value[idx] && idx > 0) {
-        const next = value.split("");
-        next[idx - 1] = "";
-        onChange(next.join(""));
-        inputs.current[idx - 1]?.focus();
-      } else {
-        const next = value.split("");
-        next[idx] = "";
-        onChange(next.join(""));
-      }
-    }
-  };
-
-  const handlePaste = (e: React.ClipboardEvent) => {
-    e.preventDefault();
-    const pasted = e.clipboardData.getData("text").replace(/\D/g, "").slice(0, 6);
-    onChange(pasted.padEnd(6, "").slice(0, 6));
-    const focusIdx = Math.min(pasted.length, 5);
-    inputs.current[focusIdx]?.focus();
-  };
-
-  return (
-    <div className="flex gap-2 justify-center" onPaste={handlePaste}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <input
-          key={i}
-          ref={(el) => { inputs.current[i] = el; }}
-          type="text"
-          inputMode="numeric"
-          maxLength={1}
-          value={value[i] ?? ""}
-          onChange={(e) => handleChange(i, e.target.value)}
-          onKeyDown={(e) => handleKeyDown(i, e)}
-          className={`w-11 h-12 text-center text-lg font-bold rounded-lg border transition-all duration-150 bg-muted/40 focus:outline-none focus:ring-2 focus:ring-primary/40 ${
-            value[i]
-              ? "border-primary text-foreground"
-              : "border-border text-muted-foreground"
-          }`}
-        />
-      ))}
-    </div>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -186,16 +120,12 @@ export default function LoginPage() {
     }
   }, []);
 
-  // register steps: 0 = credentials, 1 = verify email, 2 = onboarding
+  // register steps: 0 = credentials, 1 = onboarding
   const [step, setStep] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-
-  // Resend cooldown (seconds)
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const cooldownRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [form, setForm] = useState({
     name: "",
@@ -205,10 +135,7 @@ export default function LoginPage() {
     major: "",
   });
 
-  // Step 1: verification code
-  const [otpValue, setOtpValue] = useState("");
-
-  // Step 2: onboarding
+  // Step 1: onboarding
   const [selectedLangs, setSelectedLangs] = useState<string[]>([]);
   const [selectedJobs, setSelectedJobs] = useState<string[]>([]);
 
@@ -216,22 +143,6 @@ export default function LoginPage() {
     setForm((prev) => ({ ...prev, [key]: e.target.value }));
     setError(null);
   };
-
-  const startCooldown = useCallback(() => {
-    setResendCooldown(60);
-    if (cooldownRef.current) clearInterval(cooldownRef.current);
-    cooldownRef.current = setInterval(() => {
-      setResendCooldown((prev) => {
-        if (prev <= 1) {
-          clearInterval(cooldownRef.current!);
-          return 0;
-        }
-        return prev - 1;
-      });
-    }, 1000);
-  }, []);
-
-  useEffect(() => () => { if (cooldownRef.current) clearInterval(cooldownRef.current); }, []);
 
   // ── Login handler ──────────────────────────────────────────────────────────
   const handleLogin = async (e: React.FormEvent) => {
@@ -258,39 +169,11 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await register(form.name, form.email, form.password, form.school, form.major);
-      startCooldown();
       setStep(1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong.");
     } finally {
       setLoading(false);
-    }
-  };
-
-  // ── Step 1: verify email code ─────────────────────────────────────────────
-  const handleVerifyCode = async () => {
-    if (otpValue.replace(/\s/g, "").length < 6) return setError("Enter the full 6-digit code.");
-    setError(null);
-    setLoading(true);
-    try {
-      await verifyEmail(form.email, otpValue.trim());
-      setStep(2);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Invalid or expired code.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    if (resendCooldown > 0) return;
-    try {
-      await resendVerification(form.email);
-      startCooldown();
-      setOtpValue("");
-      setError(null);
-    } catch {
-      // silently ignore — backend always returns 200
     }
   };
 
@@ -435,8 +318,8 @@ export default function LoginPage() {
                   onSubmit={handleCredentialsSubmit}
                   className="space-y-3"
                 >
-                  <StepDots step={0} total={3} />
-                  <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 3 — Create your account</p>
+                  <StepDots step={0} total={2} />
+                  <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 2 — Create your account</p>
                   <LinkedInButton label="Sign up with LinkedIn" />
                   <Divider />
 
@@ -484,61 +367,8 @@ export default function LoginPage() {
                 </motion.form>
               )}
 
-              {/* ── REGISTER STEP 1: email verification ── */}
+              {/* ── REGISTER STEP 1: onboarding — coding lang + dream job ── */}
               {mode === "register" && step === 1 && (
-                <motion.div
-                  key="reg-1"
-                  initial={{ opacity: 0, x: 16 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  exit={{ opacity: 0, x: -16 }}
-                  className="space-y-5"
-                >
-                  <StepDots step={1} total={3} />
-
-                  {/* Icon + heading */}
-                  <div className="flex flex-col items-center gap-2 -mt-2">
-                    <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-                      <Mail className="w-6 h-6 text-primary" />
-                    </div>
-                    <p className="text-sm font-semibold text-foreground">Check your inbox</p>
-                    <p className="text-xs text-muted-foreground text-center leading-relaxed">
-                      We sent a 6-digit code to{" "}
-                      <span className="text-foreground font-medium">{form.email}</span>.
-                      Copy and paste it below.
-                    </p>
-                  </div>
-
-                  <OtpInput value={otpValue} onChange={(v) => { setOtpValue(v); setError(null); }} />
-
-                  {error && <ErrorBanner message={error} />}
-
-                  <Button
-                    type="button"
-                    size="lg"
-                    disabled={loading || otpValue.replace(/\s/g, "").length < 6}
-                    onClick={handleVerifyCode}
-                    className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
-                  >
-                    {loading ? <Spinner label="Verifying…" /> : <><Check className="w-4 h-4" /> Verify Code</>}
-                  </Button>
-
-                  {/* Resend */}
-                  <div className="text-center">
-                    <button
-                      type="button"
-                      onClick={handleResend}
-                      disabled={resendCooldown > 0}
-                      className="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : "Resend code"}
-                    </button>
-                  </div>
-                </motion.div>
-              )}
-
-              {/* ── REGISTER STEP 2: onboarding — coding lang + dream job ── */}
-              {mode === "register" && step === 2 && (
                 <motion.div
                   key="reg-2"
                   initial={{ opacity: 0, x: 16 }}
@@ -546,11 +376,11 @@ export default function LoginPage() {
                   exit={{ opacity: 0, x: -16 }}
                   className="space-y-5"
                 >
-                  <StepDots step={2} total={3} />
+                  <StepDots step={1} total={2} />
 
                   <div className="text-center -mt-2">
                     <p className="text-sm font-semibold text-foreground">Set up your profile</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">Step 3 of 3 — Personalize your experience</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Step 2 of 2 — Personalize your experience</p>
                   </div>
 
                   {/* Favorite coding language(s) */}

@@ -1,6 +1,5 @@
 import json
 import logging
-import datetime
 import urllib.parse
 
 import httpx
@@ -18,13 +17,10 @@ from app.schemas.user import (
     TokenOut,
     UserOut,
     UserUpdate,
-    VerifyEmailRequest,
-    ResendVerificationRequest,
     UserLogOut,
 )
 from app.config import get_settings
 from app.services.auth import hash_password, verify_password, create_access_token, get_current_user
-from app.services.email import generate_verification_code, send_verification_email, CODE_EXPIRY_MINUTES
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +70,6 @@ async def register(body: UserRegister, request: Request, db: AsyncSession = Depe
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=400, detail="Email already registered")
 
-    code = generate_verification_code()
-    expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=CODE_EXPIRY_MINUTES)
-
     user = User(
         name=body.name,
         email=body.email,
@@ -86,9 +79,7 @@ async def register(body: UserRegister, request: Request, db: AsyncSession = Depe
         skills=json.dumps(body.skills),
         dream_companies=json.dumps(body.dream_companies),
         dream_job=body.dream_job,
-        is_verified=False,
-        verification_code=code,
-        verification_expires_at=expires,
+        is_verified=True,
     )
     db.add(user)
     await db.flush()  # get user.id before logging
@@ -97,75 +88,8 @@ async def register(body: UserRegister, request: Request, db: AsyncSession = Depe
     await db.commit()
     await db.refresh(user)
 
-    # Send verification email (non-blocking failure — don't block registration)
-    try:
-        await send_verification_email(body.email, code, body.name)
-    except Exception as exc:
-        logger.warning("Failed to send verification email to %s: %s", body.email, exc)
-
     token = create_access_token({"sub": str(user.id)})
     return TokenOut(access_token=token, user=_to_user_out(user))
-
-
-# ---------------------------------------------------------------------------
-# Verify email
-# ---------------------------------------------------------------------------
-
-@router.post("/verify-email", response_model=UserOut)
-async def verify_email(body: VerifyEmailRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-
-    if user.is_verified:
-        return _to_user_out(user)
-
-    if not user.verification_code or user.verification_code != body.code:
-        raise HTTPException(status_code=400, detail="Invalid verification code")
-
-    if user.verification_expires_at and datetime.datetime.utcnow() > user.verification_expires_at:
-        raise HTTPException(status_code=400, detail="Verification code has expired — request a new one")
-
-    user.is_verified = True
-    user.verification_code = None
-    user.verification_expires_at = None
-
-    await _log(db, user.id, "email_verified", f"email={body.email}", _client_ip(request))
-    await db.commit()
-    await db.refresh(user)
-
-    return _to_user_out(user)
-
-
-# ---------------------------------------------------------------------------
-# Resend verification code
-# ---------------------------------------------------------------------------
-
-@router.post("/resend-verification", status_code=status.HTTP_200_OK)
-async def resend_verification(body: ResendVerificationRequest, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    # Always return 200 to avoid exposing whether the email is registered
-    if not user or user.is_verified:
-        return {"message": "If that email is registered and unverified, a new code has been sent."}
-
-    code = generate_verification_code()
-    expires = datetime.datetime.utcnow() + datetime.timedelta(minutes=CODE_EXPIRY_MINUTES)
-    user.verification_code = code
-    user.verification_expires_at = expires
-
-    await _log(db, user.id, "resend_verification", f"email={body.email}", _client_ip(request))
-    await db.commit()
-
-    try:
-        await send_verification_email(body.email, code, user.name)
-    except Exception as exc:
-        logger.warning("Failed to resend verification email to %s: %s", body.email, exc)
-
-    return {"message": "If that email is registered and unverified, a new code has been sent."}
 
 
 # ---------------------------------------------------------------------------

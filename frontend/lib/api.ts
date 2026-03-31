@@ -162,23 +162,6 @@ export async function updateMe(
   return user;
 }
 
-export async function verifyEmail(email: string, code: string): Promise<User> {
-  return apiFetch<User>("/auth/verify-email", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, code }),
-    skipAuth: true,
-  });
-}
-
-export async function resendVerification(email: string): Promise<void> {
-  await apiFetch<unknown>("/auth/resend-verification", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-    skipAuth: true,
-  });
-}
 
 export async function hasUploadedResume(): Promise<boolean> {
   try {
