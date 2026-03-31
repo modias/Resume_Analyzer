@@ -213,7 +213,6 @@ export default function LoginPage() {
     setMode(m);
     setStep(0);
     setError(null);
-    setOtpValue("");
     setSelectedLangs([]);
     setSelectedJobs([]);
   };
