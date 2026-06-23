@@ -15,26 +15,31 @@ settings = get_settings()
 
 _WEAK_PATTERNS = [
     (re.compile(r"\bworked on\b", re.I), "engineered"),
+    (re.compile(r"\bwas involved in\b", re.I), "contributed to"),
+    (re.compile(r"\bresponsible for\b", re.I), "owned"),
     (re.compile(r"\bhelped\b", re.I), "collaborated to"),
     (re.compile(r"\bassisted\b", re.I), "supported"),
-    (re.compile(r"\bresponsible for\b", re.I), "owned"),
-    (re.compile(r"\bwas involved in\b", re.I), "contributed to"),
-    (re.compile(r"\bdid\b", re.I), "executed"),
+    (re.compile(r"\bconnected\b", re.I), "integrated"),
+    (re.compile(r"\bimplemented\b", re.I), "engineered"),
+    (re.compile(r"\bbuilt\b", re.I), "engineered"),
+    (re.compile(r"\bmade\b", re.I), "engineered"),
     (re.compile(r"\bwrote\b", re.I), "developed"),
-    (re.compile(r"\bmade\b", re.I), "built"),
     (re.compile(r"\bused\b", re.I), "leveraged"),
+    (re.compile(r"\bdid\b", re.I), "executed"),
     (re.compile(r"\bran\b", re.I), "executed"),
 ]
 
-_IMPACT_TEMPLATES = [
-    "reducing processing time by X%",
-    "improving model accuracy by X%",
-    "supporting a team of X engineers",
-    "handling X+ records per day",
-]
+_METRIC_PATTERN = re.compile(
+    r"\d[\d,\.]*%?|\d+[\-–]\d+|\d+\+?|\d+\s*-\s*(?:minute|second|hour|day|week|month|year)",
+    re.I,
+)
 
 
-def _rule_based_suggestions(resume_text: str, missing_skills: list[str]) -> list[dict]:
+def _extract_metrics(text: str) -> list[str]:
+    return _METRIC_PATTERN.findall(text)
+
+
+def _rule_based_suggestions(resume_text: str, _missing_skills: list[str]) -> list[dict]:
     bullets = [
         b.strip()
         for b in re.split(r"[\n•\-\*]", resume_text)
@@ -44,29 +49,40 @@ def _rule_based_suggestions(resume_text: str, missing_skills: list[str]) -> list
     results = []
     for bullet in bullets:
         improved = bullet
-        reason = ""
+        verb_upgraded = False
+        original_verb = ""
+        new_verb = ""
 
         for pattern, replacement in _WEAK_PATTERNS:
-            if pattern.search(improved):
+            match = pattern.search(improved)
+            if match:
+                original_verb = match.group(0)
+                new_verb = replacement
                 improved = pattern.sub(replacement, improved, count=1)
-                reason = f"Replaced weak verb with stronger action verb '{replacement}'."
+                verb_upgraded = True
                 break
 
-        if not re.search(r"\d", improved):
-            improved += f", {_IMPACT_TEMPLATES[len(results) % len(_IMPACT_TEMPLATES)]}"
-            reason = (reason or "") + " Added quantification placeholder to demonstrate impact."
+        if improved == bullet:
+            continue
 
-        if missing_skills and len(results) < 2:
-            skill = missing_skills[len(results) % len(missing_skills)]
-            improved += f" (using {skill})"
-            reason = (reason or "") + f" Mentioned missing skill '{skill}' to improve JD alignment."
+        metrics = _extract_metrics(bullet)
+        reason_parts = []
+        if verb_upgraded:
+            reason_parts.append(
+                f"Upgraded weak opener '{original_verb}' to '{new_verb}'."
+            )
+        if metrics:
+            reason_parts.append(
+                f"Preserved existing metrics ({', '.join(metrics)})."
+            )
+        else:
+            reason_parts.append("Tightened phrasing without inventing new metrics.")
 
-        if improved != bullet:
-            results.append({
-                "original": bullet,
-                "suggested": improved.strip(),
-                "reason": reason.strip(),
-            })
+        results.append({
+            "original": bullet,
+            "suggested": improved.strip(),
+            "reason": " ".join(reason_parts),
+        })
 
         if len(results) >= 3:
             break
@@ -74,24 +90,54 @@ def _rule_based_suggestions(resume_text: str, missing_skills: list[str]) -> list
     return results
 
 
-# ── Gemini path ───────────────────────────────────────────────────────────────
+# ── Groq path ─────────────────────────────────────────────────────────────────
 
 _SYSTEM_PROMPT = """
-You are an expert resume coach specializing in tech internship applications.
-Given a resume text and a list of missing skills from the job description,
-return EXACTLY 3 resume bullet point improvements as a JSON array.
+You are an expert resume coach for tech internship applications.
+Given the full resume text and a job description for context, return EXACTLY 3
+resume bullet point improvements as a JSON array.
 
 Each item must have:
-  "original"  - the original bullet (copy it verbatim from the resume)
-  "suggested" - the improved version (stronger verbs, quantified, relevant skill mentioned)
-  "reason"    - one sentence explaining the improvement
+  "original"  - the original bullet (copy verbatim from the resume)
+  "suggested" - one ATS-friendly sentence, richer and more impactful
+  "reason"    - one specific sentence naming what changed (verb upgrade,
+                metrics preserved, outcome added from resume context)
 
-Rules:
-- Use strong action verbs (Engineered, Built, Optimized, Automated, etc.)
-- Add realistic quantification where missing (%, x-fold, throughput numbers)
-- Naturally work in 1-2 of the missing skills where it makes sense
-- Keep bullets under 20 words each
-- Return ONLY the JSON array, no markdown, no other text.
+Grounding (strict):
+- Use ONLY skills, technologies, projects, and outcomes stated somewhere in the
+  FULL RESUME TEXT. You may combine facts from the same role/project across the
+  resume to enrich a bullet — but do NOT invent tools, skills, or experiences.
+- If a skill is in the JD but not in the resume, do NOT add it to a bullet.
+- Never fabricate numbers (%, scale, throughput, counts) that are not in the resume.
+
+Rewrite quality:
+- Structure each suggested bullet as:
+  [Strong action verb] + [what you built/did] + [how/method] + [result/impact]
+- Preserve every number, percentage, range, duration, and count from the
+  original bullet (e.g. "55% weight", "10-minute caching", "3–15 questions").
+  Do not drop or change them. Keep all named technologies and tools.
+- Add impact: if a bullet has no clear outcome, infer a reasonable qualitative
+  one from resume context — e.g. "for students and early-career professionals",
+  "reducing manual effort", "across X features". Never invent numeric metrics.
+- Length: each suggestion MUST be 50–60 words. Preserve ALL key details,
+  metrics, and technologies; cut filler and redundant phrasing only.
+- No double verbs: never open with two action verbs joined by "and"
+  (e.g. "Developed and implemented"). Pick the stronger verb only.
+- Reframe weak bullets: if a bullet is from a non-technical or tangential
+  project (e.g. SolidWorks, volunteer work), reframe it to highlight
+  transferable skills — precision, documentation, problem-solving — relevant
+  to software/data roles. Keep facts grounded in the resume.
+- Replace weak openers (Built, Connected, Implemented, Worked on, Helped with)
+  with precise verbs: Engineered, Architected, Optimized, Designed, Automated,
+  Integrated, Developed, Led.
+- One sentence only when possible; two short sentences are OK if needed to stay
+  within 50–60 words without losing detail. Plain text, ATS-friendly.
+
+Reason field:
+- Be specific: "Upgraded 'Built' to 'Engineered', preserved 55% metric, and
+  added outcome from project context (automated grading)." Not generic praise.
+
+Return ONLY the JSON array, no markdown, no other text.
 """.strip()
 
 
@@ -135,9 +181,12 @@ async def generate_suggestions(
             client = Groq(api_key=settings.groq_api_key, http_client=http_client)
 
             prompt = (
-                f"RESUME (first 2000 chars):\n{resume_text[:2000]}\n\n"
-                f"JOB DESCRIPTION (first 1000 chars):\n{jd_text[:1000]}\n\n"
-                f"MISSING SKILLS: {', '.join(missing_skills[:8])}"
+                f"FULL RESUME TEXT:\n{resume_text}\n\n"
+                "JOB DESCRIPTION (context only — do not add JD-only skills to bullets):\n"
+                f"{jd_text[:3000]}\n\n"
+                "Pick the 3 weakest or most underdeveloped bullets and rewrite them "
+                "using facts from the full resume. Each suggestion must be 50–60 words — "
+                "preserve all metrics and technologies, cut filler only."
             )
 
             response = client.chat.completions.create(
@@ -146,8 +195,8 @@ async def generate_suggestions(
                     {"role": "system", "content": _SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.4,
-                max_tokens=600,
+                temperature=0.25,
+                max_tokens=1000,
             )
         content = response.choices[0].message.content or "[]"
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
