@@ -1,8 +1,11 @@
 import json
+import os
 import re
 import logging
 import traceback
 import asyncio
+import subprocess
+import tempfile
 import urllib.request
 from fastapi import APIRouter, HTTPException, Depends
 
@@ -21,6 +24,57 @@ router = APIRouter(prefix="/interview", tags=["interview"])
 settings = get_settings()
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+_PISTON_URL = "https://emkc.io/api/v2/piston/execute"
+
+_PISTON_LANGUAGE_MAP: dict[str, str] = {
+    "python": "python",
+    "javascript": "javascript",
+    "typescript": "typescript",
+    "java": "java",
+    "go": "go",
+    "rust": "rust",
+    "c": "c",
+    "c++": "cpp",
+    "cpp": "cpp",
+    "c#": "csharp",
+    "csharp": "csharp",
+    "ruby": "ruby",
+    "php": "php",
+    "kotlin": "kotlin",
+    "swift": "swift",
+    "scala": "scala",
+    "r": "r",
+    "perl": "perl",
+    "haskell": "haskell",
+    "lua": "lua",
+    "bash": "bash",
+    "shell": "bash",
+    "dart": "dart",
+    "elixir": "elixir",
+    "erlang": "erlang",
+    "clojure": "clojure",
+    "f#": "fsharp",
+    "fsharp": "fsharp",
+    "ocaml": "ocaml",
+    "julia": "julia",
+    "zig": "zig",
+    "nim": "nim",
+    "crystal": "crystal",
+    "objective-c": "objc",
+    "objc": "objc",
+    "pascal": "pascal",
+    "fortran": "fortran",
+    "ada": "ada",
+    "prolog": "prolog",
+    "lisp": "lisp",
+    "scheme": "scheme",
+    "racket": "racket",
+    "brainfuck": "brainfuck",
+}
+
+_NON_RUNNABLE_LANGUAGES = frozenset({
+    "sql", "html", "css", "graphql", "solidity", "vyper", "move", "coq", "agda", "idris", "lean",
+})
 
 # ── Fallback question bank (used when Groq is unreachable) ───────────────────
 _FALLBACK_QUESTIONS: dict[str, dict[str, list[dict]]] = {
@@ -243,9 +297,173 @@ Return a JSON array of objects, each with:
   "hint"         - a one-sentence hint pointing at the key algorithm or data structure to use
   "category"     - one of: Fundamentals, Data Structures, Algorithms, System Design, Debugging, Best Practices
   "ideal_answer" - a complete, correct code solution with a 1-2 sentence explanation. Include actual working code.
+  "test_harness" - 2-4 lines of executable test code that call the solution and print results.
+                   Use the language's normal output (print / console.log / System.out.println / fmt.Println).
+                   Do NOT redefine the solution — only call it with sample inputs. No markdown fences.
+
+For runnable languages (not SQL/HTML/CSS), end each "question" with a short parenthetical Run Code tip:
+  - If test_harness is provided: tell the candidate to use Run Code (auto tests will print results).
+  - If no test_harness: tell them to add print/console.log (or the language equivalent) to see output,
+    or regenerate questions for auto tests.
 
 Return ONLY the JSON array, no markdown, no extra text.
 """.strip()
+
+
+_OUTPUT_CALL_HINTS: dict[str, str] = {
+    "python": "print()",
+    "javascript": "console.log()",
+    "typescript": "console.log()",
+    "java": "System.out.println()",
+    "go": "fmt.Println()",
+    "rust": "println!()",
+    "c": "printf()",
+    "c++": "std::cout",
+    "cpp": "std::cout",
+    "csharp": "Console.WriteLine()",
+    "ruby": "puts",
+    "php": "echo",
+    "kotlin": "println()",
+    "swift": "print()",
+    "scala": "println()",
+    "r": "print()",
+    "lua": "print()",
+    "bash": "echo",
+    "shell": "echo",
+}
+
+_HARNESS_OUTPUT_PATTERNS: dict[str, list[str]] = {
+    "python": [r"^\s*print\s*\("],
+    "javascript": [r"^\s*console\.log\s*\("],
+    "typescript": [r"^\s*console\.log\s*\("],
+    "java": [r"^\s*System\.out\.println\s*\("],
+    "go": [r"^\s*fmt\.Print"],
+    "rust": [r"^\s*println!\s*\("],
+    "c": [r"^\s*printf\s*\("],
+    "c++": [r"^\s*std::cout"],
+    "cpp": [r"^\s*std::cout"],
+    "csharp": [r"^\s*Console\.WriteLine\s*\("],
+    "ruby": [r"^\s*puts\s+" , r"^\s*p\s+"],
+    "php": [r"^\s*echo\s+", r"^\s*print\s*\("],
+    "kotlin": [r"^\s*println\s*\("],
+    "swift": [r"^\s*print\s*\("],
+    "scala": [r"^\s*println\s*\("],
+    "r": [r"^\s*print\s*\("],
+    "lua": [r"^\s*print\s*\("],
+    "bash": [r"^\s*echo\s+"],
+    "shell": [r"^\s*echo\s+"],
+}
+
+# Fallback harnesses for built-in question bank (keyed by exact question text).
+_FALLBACK_TEST_HARNESSES: dict[str, str] = {
+    "Write a Python function that takes a list of integers and returns the two numbers that add up to a target sum.":
+        "print(two_sum([2, 7, 11, 15], 9))\nprint(two_sum([3, 2, 4], 6))",
+    "Implement a function `is_palindrome(s)` that returns True if the string is a palindrome, ignoring spaces and case.":
+        'print(is_palindrome("A man a plan a canal Panama"))\nprint(is_palindrome("hello"))',
+    "Write a Python function to flatten a nested list: `[[1, [2, 3]], [4, [5, [6]]]]` → `[1, 2, 3, 4, 5, 6]`.":
+        "print(flatten([[1, [2, 3]], [4, [5, [6]]]]))",
+    "Write a function that counts the frequency of each character in a string and returns it as a dictionary.":
+        'print(char_frequency("hello"))',
+    "Implement a stack class in Python with push, pop, peek, and is_empty methods.":
+        "s = Stack()\ns.push(1)\ns.push(2)\nprint(s.peek())\nprint(s.pop())\nprint(s.is_empty())",
+    "Write a Python function to find the longest substring without repeating characters. Return its length.":
+        'print(length_of_longest_substring("abcabcbb"))\nprint(length_of_longest_substring("bbbbb"))',
+    "Implement an LRU Cache class with get(key) and put(key, value) methods, both O(1).":
+        "c = LRUCache(2)\nc.put(1, 1)\nc.put(2, 2)\nprint(c.get(1))\nc.put(3, 3)\nprint(c.get(2))",
+    "Write a function that returns all permutations of a list without using itertools.":
+        "print(sorted(permutations([1, 2, 3])))",
+    "Given a binary tree, write a function to return its level-order traversal as a list of lists.":
+        "class TreeNode:\n    def __init__(self, val=0, left=None, right=None):\n        self.val, self.left, self.right = val, left, right\nroot = TreeNode(3, TreeNode(9), TreeNode(20, TreeNode(15), TreeNode(7)))\nprint(level_order(root))",
+    "Write a Python decorator `@retry(times=3)` that retries a function up to N times if it raises an exception.":
+        "@retry(times=3)\ndef flaky():\n    return 42\nprint(flaky())",
+    "Write a function to reverse a linked list iteratively. The node structure is: `{ val, next }`.":
+        "class Node:\n    def __init__(self, val=0, next=None):\n        self.val, self.next = val, next\nhead = Node(1, Node(2, Node(3)))\nprint(reverse_list(head).val, reverse_list(head).next.val)",
+    "Implement binary search on a sorted array. Return the index of the target or -1 if not found.":
+        "print(binary_search([1, 3, 5, 7, 9], 5))\nprint(binary_search([1, 3, 5, 7, 9], 4))",
+    "Implement a min-stack that supports push, pop, and getMin in O(1) time.":
+        "ms = MinStack()\nms.push(3)\nms.push(1)\nprint(ms.getMin())\nms.pop()\nprint(ms.getMin())",
+}
+
+
+def _extract_test_harness_from_ideal(ideal_answer: str, language: str) -> str:
+    if not ideal_answer.strip():
+        return ""
+    lang = language.strip().lower()
+    patterns = _HARNESS_OUTPUT_PATTERNS.get(lang, _HARNESS_OUTPUT_PATTERNS.get("python", []))
+    lines: list[str] = []
+    for line in ideal_answer.splitlines():
+        if any(re.search(pat, line) for pat in patterns):
+            lines.append(line.rstrip())
+    return "\n".join(lines).strip()
+
+
+def _strip_run_guidance(question: str) -> str:
+    idx = question.rfind("\n\n(Run Code:")
+    if idx != -1:
+        return question[:idx].strip()
+    return question.strip()
+
+
+def _run_guidance_suffix(language: str, has_harness: bool) -> str:
+    lang = language.strip().lower()
+    if lang in _NON_RUNNABLE_LANGUAGES:
+        return ""
+    output = _OUTPUT_CALL_HINTS.get(lang, "print/output calls")
+    if has_harness:
+        return (
+            f"\n\n(Run Code: auto tests are included — click Run Code to execute your solution "
+            f"and see printed results. You can also add {output} in your answer for extra output.)"
+        )
+    return (
+        f"\n\n(Run Code: add {output} in your answer to see output, "
+        f"or regenerate questions for auto tests.)"
+    )
+
+
+def _append_run_guidance(question: str, language: str, has_harness: bool) -> str:
+    q = question.strip()
+    if not q or language.strip().lower() in _NON_RUNNABLE_LANGUAGES:
+        return q
+    if "(Run Code:" in q:
+        return q
+    return q + _run_guidance_suffix(language, has_harness)
+
+
+def _resolve_test_harness(question: str, ideal_answer: str, harness: str, language: str) -> str:
+    resolved = harness.strip()
+    if resolved:
+        return _strip_code_fences(resolved)
+    resolved = _extract_test_harness_from_ideal(ideal_answer, language)
+    if resolved:
+        return resolved
+    return _FALLBACK_TEST_HARNESSES.get(_strip_run_guidance(question), "")
+
+
+def _normalize_question(q: dict, language: str) -> dict:
+    q.setdefault("ideal_answer", "")
+    q["test_harness"] = _resolve_test_harness(
+        q.get("question", ""),
+        q.get("ideal_answer", ""),
+        q.get("test_harness", ""),
+        language,
+    )
+    q["question"] = _append_run_guidance(
+        q.get("question", ""),
+        language,
+        bool(q["test_harness"].strip()),
+    )
+    return q
+
+
+def _normalize_questions(questions: list[dict], language: str) -> list[dict]:
+    return [_normalize_question(q, language) for q in questions]
+
+
+def _combine_code_with_harness(user_code: str, test_harness: str) -> str:
+    harness = test_harness.strip()
+    if not harness:
+        return user_code
+    return f"{user_code}\n\n# --- auto tests ---\n{harness}"
 
 
 class QuestionRequest(BaseModel):
@@ -259,6 +477,7 @@ class InterviewQuestion(BaseModel):
     hint: str
     category: str
     ideal_answer: str = ""
+    test_harness: str = ""
 
 
 class CheckAnswerRequest(BaseModel):
@@ -274,6 +493,20 @@ class CheckAnswerResponse(BaseModel):
     score: int
     feedback: str
     ideal_answer: str
+
+
+class RunCodeRequest(BaseModel):
+    code: str
+    language: str
+    test_harness: str = ""
+    ideal_answer: str = ""
+    question: str = ""
+
+
+class RunCodeResponse(BaseModel):
+    stdout: str
+    stderr: str
+    exit_code: int
 
 
 class DifficultyAttemptStats(BaseModel):
@@ -354,11 +587,14 @@ async def generate_questions(req: QuestionRequest):
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         questions = json.loads(content)
-        return questions[:count]
+        return _normalize_questions(questions[:count], req.language)
 
     except Exception as e:
         logger.warning("Groq unavailable, using fallback questions: %s", e)
-        return _get_fallback_questions(req.language, difficulty, count)
+        return _normalize_questions(
+            _get_fallback_questions(req.language, difficulty, count),
+            req.language,
+        )
 
 
 _CHECK_SYSTEM_PROMPT = """
@@ -546,6 +782,114 @@ async def check_answer(req: CheckAnswerRequest):
             logger.warning("Groq unavailable for check-answer, using local evaluator: %s", e)
 
     return _local_evaluate(req.question, req.answer, req.hint, req.ideal_answer)
+
+
+def _strip_code_fences(code: str) -> str:
+    cleaned = code.strip()
+    cleaned = re.sub(r"^```[a-zA-Z0-9]*\n?", "", cleaned)
+    cleaned = re.sub(r"\n?```$", "", cleaned)
+    return cleaned.strip()
+
+
+def _resolve_piston_language(language: str) -> str | None:
+    key = language.strip().lower()
+    if key in _NON_RUNNABLE_LANGUAGES:
+        return None
+    return _PISTON_LANGUAGE_MAP.get(key)
+
+
+def _piston_execute_sync(piston_lang: str, code: str) -> RunCodeResponse:
+    payload = json.dumps({
+        "language": piston_lang,
+        "version": "*",
+        "files": [{"name": "main", "content": code}],
+        "run_timeout": 5000,
+        "compile_timeout": 10000,
+    }).encode()
+    proxy_handler = urllib.request.ProxyHandler({})
+    opener = urllib.request.build_opener(proxy_handler)
+    req = urllib.request.Request(
+        _PISTON_URL,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with opener.open(req, timeout=20) as resp:
+        result = json.loads(resp.read())
+    run = result.get("run") or {}
+    compile_info = result.get("compile") or {}
+    stdout = (run.get("stdout") or "") + (compile_info.get("stdout") or "")
+    stderr = (run.get("stderr") or "") + (compile_info.get("stderr") or "")
+    exit_code = int(run.get("code", 1) if run.get("code") is not None else 1)
+    return RunCodeResponse(stdout=stdout, stderr=stderr, exit_code=exit_code)
+
+
+def _run_local_sync(language: str, code: str) -> RunCodeResponse | None:
+    key = language.strip().lower()
+    if key == "python":
+        suffix, cmd = ".py", ["python3"]
+    elif key in ("javascript", "typescript"):
+        suffix, cmd = ".js", ["node"]
+    else:
+        return None
+
+    path = ""
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=suffix, delete=False) as f:
+            f.write(code)
+            path = f.name
+        result = subprocess.run(
+            [*cmd, path],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        return RunCodeResponse(
+            stdout=result.stdout or "",
+            stderr=result.stderr or "",
+            exit_code=result.returncode,
+        )
+    except subprocess.TimeoutExpired:
+        return RunCodeResponse(stdout="", stderr="Execution timed out (5s limit).", exit_code=1)
+    except FileNotFoundError:
+        return None
+    finally:
+        if path and os.path.exists(path):
+            os.unlink(path)
+
+
+@router.post("/run-code", response_model=RunCodeResponse)
+async def run_code(req: RunCodeRequest):
+    code = _strip_code_fences(req.code)
+    if not code:
+        raise HTTPException(status_code=400, detail="Code cannot be empty.")
+
+    harness = _resolve_test_harness(
+        req.question,
+        req.ideal_answer,
+        req.test_harness,
+        req.language,
+    )
+    full_code = _combine_code_with_harness(code, harness)
+
+    piston_lang = _resolve_piston_language(req.language)
+    if not piston_lang:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Code execution is not supported for {req.language.strip()}.",
+        )
+
+    try:
+        return await asyncio.to_thread(_piston_execute_sync, piston_lang, full_code)
+    except Exception as e:
+        logger.warning("Piston unavailable, trying local runner: %s", e)
+        local = await asyncio.to_thread(_run_local_sync, req.language, full_code)
+        if local is not None:
+            return local
+        raise HTTPException(
+            status_code=503,
+            detail="Code runner unavailable. Try again later or use Python/JavaScript.",
+        ) from e
 
 
 @router.post("/save-session", response_model=SavePracticeSessionResponse)

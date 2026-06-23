@@ -28,6 +28,8 @@ import {
   VolumeX,
   Loader2,
   TrendingUp,
+  Play,
+  Terminal,
 } from "lucide-react";
 import { saveSkillSession, getSkillProgress, type PracticeProgressResponse } from "@/lib/api";
 import { speakText, buildSkillFeedbackText } from "@/lib/elevenlabs";
@@ -99,6 +101,7 @@ interface Question {
   hint: string;
   category: string;
   ideal_answer?: string;
+  test_harness?: string;
 }
 
 interface AnswerResult {
@@ -107,6 +110,16 @@ interface AnswerResult {
   feedback: string;
   ideal_answer: string;
 }
+
+interface RunCodeOutput {
+  stdout: string;
+  stderr: string;
+  exit_code: number;
+}
+
+const NON_RUNNABLE_LANGUAGES = new Set([
+  "sql", "html", "css", "graphql", "solidity", "vyper", "move", "coq", "agda", "idris", "lean",
+]);
 
 export default function ImproveSkillsPage() {
   const [language, setLanguage] = useState("");
@@ -120,6 +133,8 @@ export default function ImproveSkillsPage() {
   const [answers, setAnswers] = useState<Record<number, string>>({});
   const [checking, setChecking] = useState<Set<number>>(new Set());
   const [results, setResults] = useState<Record<number, AnswerResult>>({});
+  const [runOutputs, setRunOutputs] = useState<Record<number, RunCodeOutput>>({});
+  const [runningCode, setRunningCode] = useState<Set<number>>(new Set());
   const [speaking, setSpeaking] = useState<number | null>(null);
   const [loadingAudio, setLoadingAudio] = useState<Set<number>>(new Set());
   const [practiceProgress, setPracticeProgress] = useState<PracticeProgressResponse | null>(null);
@@ -174,6 +189,7 @@ export default function ImproveSkillsPage() {
     setRevealed(new Set());
     setAnswers({});
     setResults({});
+    setRunOutputs({});
     progressSavedForBatch.current = false;
 
     try {
@@ -215,6 +231,51 @@ export default function ImproveSkillsPage() {
 
   const activeLanguage =
     practiceProgress?.languages.find((l) => l.language_key === selectedLanguageKey) ?? null;
+
+  const canRunCode = !NON_RUNNABLE_LANGUAGES.has(language.trim().toLowerCase());
+
+  const handleRunCode = async (i: number) => {
+    const code = answers[i] ?? "";
+    if (!code.trim() || !canRunCode) return;
+
+    setRunningCode((prev) => new Set(prev).add(i));
+    try {
+      const res = await fetch(`${API_BASE}/interview/run-code`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          code: code.trim(),
+          language: language.trim(),
+          test_harness: questions[i].test_harness ?? "",
+          ideal_answer: questions[i].ideal_answer ?? "",
+          question: questions[i].question,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.detail ?? `Request failed (${res.status})`);
+      }
+
+      const output: RunCodeOutput = await res.json();
+      setRunOutputs((prev) => ({ ...prev, [i]: output }));
+    } catch (err) {
+      setRunOutputs((prev) => ({
+        ...prev,
+        [i]: {
+          stdout: "",
+          stderr: err instanceof Error ? err.message : "Failed to run code.",
+          exit_code: 1,
+        },
+      }));
+    } finally {
+      setRunningCode((prev) => {
+        const next = new Set(prev);
+        next.delete(i);
+        return next;
+      });
+    }
+  };
 
   const handleCheckAnswer = async (i: number) => {
     const answer = answers[i] ?? "";
@@ -576,7 +637,9 @@ export default function ImproveSkillsPage() {
             {questions.map((q, i) => {
               const Icon = CATEGORY_ICONS[q.category] ?? Code2;
               const result = results[i];
+              const runOutput = runOutputs[i];
               const isChecking = checking.has(i);
+              const isRunning = runningCode.has(i);
 
               return (
                 <motion.div
@@ -637,34 +700,105 @@ export default function ImproveSkillsPage() {
                         </label>
                         <textarea
                           value={answers[i] ?? ""}
-                          onChange={(e) => setAnswers((prev) => ({ ...prev, [i]: e.target.value }))}
+                          onChange={(e) => {
+                            setAnswers((prev) => ({ ...prev, [i]: e.target.value }));
+                            setRunOutputs((prev) => {
+                              if (prev[i] == null) return prev;
+                              const next = { ...prev };
+                              delete next[i];
+                              return next;
+                            });
+                          }}
                           placeholder="Write your answer here…"
                           rows={4}
                           className="w-full resize-y rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono"
                         />
-                        <Button
-                          size="sm"
-                          onClick={() => handleCheckAnswer(i)}
-                          disabled={isChecking || !(answers[i] ?? "").trim()}
-                          className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
-                        >
-                          {isChecking ? (
-                            <>
-                              <motion.div
-                                animate={{ rotate: 360 }}
-                                transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                                className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
-                              />
-                              Checking…
-                            </>
-                          ) : (
-                            <>
-                              <SendHorizonal className="w-3.5 h-3.5" />
-                              Check Answer
-                            </>
+                        <div className="flex flex-wrap gap-2">
+                          {canRunCode && (
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => handleRunCode(i)}
+                              disabled={isRunning || !(answers[i] ?? "").trim()}
+                              className="gap-1.5 border-border text-foreground hover:bg-muted/60"
+                            >
+                              {isRunning ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  Running…
+                                </>
+                              ) : (
+                                <>
+                                  <Play className="w-3.5 h-3.5" />
+                                  Run Code
+                                </>
+                              )}
+                            </Button>
                           )}
-                        </Button>
+                          <Button
+                            size="sm"
+                            onClick={() => handleCheckAnswer(i)}
+                            disabled={isChecking || !(answers[i] ?? "").trim()}
+                            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
+                          >
+                            {isChecking ? (
+                              <>
+                                <motion.div
+                                  animate={{ rotate: 360 }}
+                                  transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
+                                  className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
+                                />
+                                Checking…
+                              </>
+                            ) : (
+                              <>
+                                <SendHorizonal className="w-3.5 h-3.5" />
+                                Check Answer
+                              </>
+                            )}
+                          </Button>
+                        </div>
                       </div>
+
+                      {/* Code output */}
+                      <AnimatePresence>
+                        {runOutput && (
+                          <motion.div
+                            initial={{ opacity: 0, y: 6 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0 }}
+                            className="space-y-2"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
+                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                                Output
+                                {runOutput.exit_code === 0 ? (
+                                  <span className="ml-2 text-green-400 normal-case tracking-normal">· exit 0</span>
+                                ) : (
+                                  <span className="ml-2 text-red-400 normal-case tracking-normal">· exit {runOutput.exit_code}</span>
+                                )}
+                              </p>
+                            </div>
+                            <pre className="text-xs font-mono leading-relaxed rounded-lg border border-border bg-black/40 p-3 overflow-x-auto whitespace-pre-wrap min-h-[2.5rem]">
+                              {runOutput.stdout && (
+                                <span className="text-green-300">{runOutput.stdout}</span>
+                              )}
+                              {runOutput.stderr && (
+                                <span className={runOutput.stdout ? "text-red-300" : "text-red-300"}>
+                                  {runOutput.stdout ? "\n" : ""}
+                                  {runOutput.stderr}
+                                </span>
+                              )}
+                              {!runOutput.stdout && !runOutput.stderr && (
+                                <span className="text-muted-foreground">
+                                  (no output — see the Run Code tip in the question above)
+                                </span>
+                              )}
+                            </pre>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
 
                       {/* Result */}
                       <AnimatePresence>
