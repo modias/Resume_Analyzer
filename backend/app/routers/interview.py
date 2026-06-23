@@ -227,10 +227,15 @@ _DEFAULT_FALLBACK = [
 ]
 
 
-def _get_fallback_questions(language: str, difficulty: str, count: int) -> list[dict]:
+def _get_fallback_questions(
+    language: str, difficulty: str, count: int, topic: str = "any", custom_topic: str = "",
+) -> list[dict]:
     lang = language.lower()
     diff = difficulty.lower()
     bank = _FALLBACK_QUESTIONS.get(lang, {}).get(diff) or _FALLBACK_QUESTIONS.get(lang, {}).get("medium") or _DEFAULT_FALLBACK
+    bank = _filter_questions_by_topic(bank, topic, custom_topic)
+    if not bank:
+        bank = _FALLBACK_QUESTIONS.get(lang, {}).get(diff) or _FALLBACK_QUESTIONS.get(lang, {}).get("medium") or _DEFAULT_FALLBACK
     return (bank * ((count // len(bank)) + 1))[:count]
 
 
@@ -286,6 +291,127 @@ DIFFICULTY_PROMPTS = {
     "hard": "advanced questions involving system design, optimization, concurrency, and edge cases",
     "god": "expert-level, fiendishly difficult questions covering internals, compiler behavior, performance micro-optimization, and tricky gotchas that even senior engineers struggle with",
 }
+
+TOPIC_KEYS: frozenset[str] = frozenset({
+    "any", "dsa", "software_development", "data_science", "cybersecurity",
+    "system_design", "sql_databases", "custom",
+})
+
+TOPIC_LABELS: dict[str, str] = {
+    "any": "Any Topic",
+    "dsa": "DSA",
+    "software_development": "Software Development",
+    "data_science": "Data Science",
+    "cybersecurity": "Cybersecurity",
+    "system_design": "System Design",
+    "sql_databases": "SQL & Databases",
+    "custom": "Custom",
+}
+
+TOPIC_PROMPTS: dict[str, str] = {
+    "dsa": (
+        "Focus exclusively on data structures and algorithms: arrays, linked lists, trees, graphs, "
+        "heaps, stacks, queues, sorting, searching, sliding window, and dynamic programming. "
+        "Every question must use category Data Structures or Algorithms."
+    ),
+    "software_development": (
+        "Focus on general software engineering: OOP, APIs, testing, clean code, design patterns, "
+        "refactoring, debugging, and idiomatic language usage. "
+        "Prefer categories Fundamentals, Best Practices, or Debugging."
+    ),
+    "data_science": (
+        "Focus on data analysis and data science: pandas/NumPy-style data manipulation, data cleaning, "
+        "aggregation, merging datasets, statistics, and ML fundamentals appropriate for the language."
+    ),
+    "cybersecurity": (
+        "Focus on secure coding and cybersecurity: input validation, authentication, hashing/encryption, "
+        "OWASP-style vulnerabilities, secure APIs, and defensive programming."
+    ),
+    "system_design": (
+        "Focus on system design, scalability, concurrency, distributed systems, caching, rate limiting, "
+        "and architecture. Every question must use category System Design."
+    ),
+    "sql_databases": (
+        "Focus on SQL and databases: queries, joins, indexes, normalization, window functions, CTEs, "
+        "schema design, and query optimization."
+    ),
+}
+
+TOPIC_CATEGORIES: dict[str, frozenset[str]] = {
+    "dsa": frozenset({"Data Structures", "Algorithms"}),
+    "software_development": frozenset({"Fundamentals", "Best Practices", "Debugging"}),
+    "system_design": frozenset({"System Design"}),
+}
+
+TOPIC_KEYWORDS: dict[str, tuple[str, ...]] = {
+    "data_science": (
+        "pandas", "numpy", "dataframe", "dataset", "aggregation", "statistics",
+        "machine learning", "feature", "csv", "missing values", "groupby",
+    ),
+    "cybersecurity": (
+        "security", "secure", "encrypt", "hash", "auth", "owasp", "injection",
+        "xss", "csrf", "sanitize", "vulnerab", "password", "token",
+    ),
+    "sql_databases": (
+        "sql", "query", "select", "join", "table", "database", "schema",
+        "index", "cte", "window", "partition", "normalize",
+    ),
+}
+
+
+def _filter_questions_by_custom_topic(questions: list[dict], custom_topic: str) -> list[dict]:
+    words = [w for w in re.split(r"\W+", custom_topic.lower()) if len(w) > 2]
+    if not words:
+        return []
+    matched = [
+        q for q in questions
+        if any(w in f"{q.get('question', '')} {q.get('hint', '')}".lower() for w in words)
+    ]
+    return matched
+
+
+def _filter_questions_by_topic(questions: list[dict], topic: str, custom_topic: str = "") -> list[dict]:
+    if topic == "any":
+        return questions
+    if topic == "custom":
+        return _filter_questions_by_custom_topic(questions, custom_topic)
+    categories = TOPIC_CATEGORIES.get(topic)
+    if categories:
+        matched = [q for q in questions if q.get("category") in categories]
+        if matched:
+            return matched
+    keywords = TOPIC_KEYWORDS.get(topic)
+    if keywords:
+        matched = [
+            q for q in questions
+            if any(kw in f"{q.get('question', '')} {q.get('hint', '')}".lower() for kw in keywords)
+        ]
+        if matched:
+            return matched
+    return []
+
+
+def _apply_topic_filter(questions: list[dict], topic: str, count: int, custom_topic: str = "") -> list[dict]:
+    if topic == "any":
+        return questions[:count]
+    filtered = _filter_questions_by_topic(questions, topic, custom_topic)
+    if not filtered:
+        return questions[:count]
+    return (filtered * ((count // len(filtered)) + 1))[:count]
+
+
+def _build_topic_prompt_line(topic: str, custom_topic: str = "") -> str:
+    if topic == "any":
+        return ""
+    if topic == "custom":
+        label = custom_topic.strip()
+        return (
+            f"\nTopic: {label} — Generate interview questions for someone preparing for a "
+            f"{label} role. Every question should be relevant to {label} skills, tools, and "
+            f"real-world scenarios in that field."
+        )
+    return f"\nTopic: {TOPIC_LABELS[topic]} — {TOPIC_PROMPTS[topic]}"
+
 
 def _build_system_prompt(count: int) -> str:
     return f"""
@@ -470,6 +596,8 @@ class QuestionRequest(BaseModel):
     language: str
     difficulty: str
     count: int = 5
+    topic: str = "any"
+    custom_topic: str = ""
 
 
 class InterviewQuestion(BaseModel):
@@ -566,6 +694,20 @@ async def generate_questions(req: QuestionRequest):
     if req.language.strip().lower() not in KNOWN_LANGUAGES:
         raise HTTPException(status_code=422, detail="Language not found")
 
+    topic = (req.topic or "any").lower().strip()
+    if topic not in TOPIC_KEYS:
+        raise HTTPException(
+            status_code=400,
+            detail="topic must be any, dsa, software_development, data_science, cybersecurity, system_design, sql_databases, or custom",
+        )
+
+    custom_topic = (req.custom_topic or "").strip()
+    if topic == "custom" and len(custom_topic) < 2:
+        raise HTTPException(
+            status_code=400,
+            detail="custom_topic is required (at least 2 characters) when topic is custom",
+        )
+
     count = max(1, min(req.count, 15))
 
     try:
@@ -573,6 +715,9 @@ async def generate_questions(req: QuestionRequest):
             f"Language: {req.language}\n"
             f"Difficulty: {difficulty} — {DIFFICULTY_PROMPTS[difficulty]}"
         )
+        topic_line = _build_topic_prompt_line(topic, custom_topic)
+        if topic_line:
+            prompt += topic_line
         content = await asyncio.to_thread(
             _groq_chat_sync,
             settings.groq_api_key,
@@ -587,12 +732,13 @@ async def generate_questions(req: QuestionRequest):
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         questions = json.loads(content)
+        questions = _apply_topic_filter(questions, topic, count, custom_topic)
         return _normalize_questions(questions[:count], req.language)
 
     except Exception as e:
         logger.warning("Groq unavailable, using fallback questions: %s", e)
         return _normalize_questions(
-            _get_fallback_questions(req.language, difficulty, count),
+            _get_fallback_questions(req.language, difficulty, count, topic, custom_topic),
             req.language,
         )
 

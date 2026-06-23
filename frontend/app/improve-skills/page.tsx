@@ -41,6 +41,7 @@ const DIFFICULTIES = [
   { value: "god", label: "God Level", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
 ];
 
+
 /** Skill level rows for coverage breakdown bars (Easy → God). */
 const SKILL_LEVEL_BARS = [
   { key: "easy", label: "Easy", bar: "bg-green-500", text: "text-green-400" },
@@ -124,6 +125,7 @@ const NON_RUNNABLE_LANGUAGES = new Set([
 export default function ImproveSkillsPage() {
   const [language, setLanguage] = useState("");
   const [difficulty, setDifficulty] = useState("medium");
+  const [focusTopic, setFocusTopic] = useState("");
   const [questionCount, setQuestionCount] = useState(5);
   const [open, setOpen] = useState(false);
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -196,7 +198,13 @@ export default function ImproveSkillsPage() {
       const res = await fetch(`${API_BASE}/interview/questions`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ language: language.trim(), difficulty, count: questionCount }),
+        body: JSON.stringify({
+          language: language.trim(),
+          difficulty,
+          count: questionCount,
+          topic: focusTopic.trim() ? "custom" : "any",
+          custom_topic: focusTopic.trim(),
+        }),
       });
 
       if (!res.ok) {
@@ -556,6 +564,19 @@ export default function ImproveSkillsPage() {
               </div>
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                Topic <span className="normal-case font-normal">(optional)</span>
+              </label>
+              <Input
+                value={focusTopic}
+                onChange={(e) => setFocusTopic(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
+                placeholder="e.g. DSA, Data Engineer, Cybersecurity, DevOps…"
+                className="bg-muted/40 border-border focus:border-primary/50"
+              />
+            </div>
+
             {/* Question count */}
             <div className="space-y-1.5">
               <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
@@ -629,7 +650,9 @@ export default function ImproveSkillsPage() {
             <div className="flex items-center gap-3">
               <div className="h-px flex-1 bg-border" />
               <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30 text-xs px-3">
-                {language} · {selected.label} · {questions.length} {questions.length === 1 ? "Question" : "Questions"}
+                {language} · {selected.label}
+                {focusTopic.trim() && ` · ${focusTopic.trim()}`}
+                {" · "}{questions.length} {questions.length === 1 ? "Question" : "Questions"}
               </Badge>
               <div className="h-px flex-1 bg-border" />
             </div>
