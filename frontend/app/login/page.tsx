@@ -7,7 +7,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AlertCircle, Sparkles, LogIn, UserPlus, Eye, EyeOff, Check, Code2, Briefcase } from "lucide-react";
-import { login, register, updateMe, isAuthenticated, setToken, setCachedUser } from "@/lib/api";
+import { login, register, updateMe, isAuthenticated, setToken, setCachedUser, checkBackendHealth, formatApiError, BACKEND_OFFLINE_BANNER } from "@/lib/api";
 
 // ─── Options ──────────────────────────────────────────────────────────────────
 
@@ -110,6 +110,10 @@ export default function LoginPage() {
     }
   }, [router]);
 
+  useEffect(() => {
+    checkBackendHealth().then((ok) => setBackendOffline(!ok));
+  }, []);
+
   // "login" or "register" tab (URL ?register=1 opens Create Account)
   const [mode, setMode] = useState<"login" | "register">("login");
 
@@ -125,6 +129,7 @@ export default function LoginPage() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [backendOffline, setBackendOffline] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
 
   const [form, setForm] = useState({
@@ -153,7 +158,7 @@ export default function LoginPage() {
       await login(form.email, form.password);
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(formatApiError(err, "Something went wrong."));
     } finally {
       setLoading(false);
     }
@@ -171,7 +176,7 @@ export default function LoginPage() {
       await register(form.name, form.email, form.password, form.school, form.major);
       setStep(1);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(formatApiError(err, "Something went wrong."));
     } finally {
       setLoading(false);
     }
@@ -203,7 +208,7 @@ export default function LoginPage() {
       }
       router.push("/dashboard");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      setError(formatApiError(err, "Something went wrong."));
     } finally {
       setLoading(false);
     }
@@ -243,6 +248,12 @@ export default function LoginPage() {
         </div>
 
         <Card className="border-border bg-card shadow-2xl">
+          {backendOffline && (
+            <div className="mx-6 mt-6 flex items-center gap-2 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs">
+              <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+              {BACKEND_OFFLINE_BANNER}
+            </div>
+          )}
           <CardHeader className="pb-4">
             {/* Tab toggle — hide on verify/onboarding steps */}
             {(mode === "login" || step === 0) && (

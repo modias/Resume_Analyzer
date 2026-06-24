@@ -5,6 +5,7 @@ Primary:  Groq (if GROQ_API_KEY is set)
 Fallback: Rule-based rewrites using weak-word detection
 """
 
+import asyncio
 import re
 import json
 from app.config import get_settings
@@ -141,32 +142,41 @@ Return ONLY the JSON array, no markdown, no other text.
 """.strip()
 
 
-async def summarize_job_description(jd_text: str) -> str:
+def _groq_chat(messages: list[dict], *, temperature: float, max_tokens: int) -> str:
+    import httpx
+    from groq import Groq
+
+    with httpx.Client(trust_env=False) as http_client:
+        client = Groq(api_key=settings.groq_api_key, http_client=http_client)
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+    return response.choices[0].message.content or ""
+
+
+def summarize_job_description_sync(jd_text: str) -> str:
     if not settings.groq_api_key:
         return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
     try:
-        import httpx
-        from groq import Groq
-        with httpx.Client(trust_env=False) as http_client:
-            client = Groq(api_key=settings.groq_api_key, http_client=http_client)
-            prompt = (
-                "Summarize the following job description in exactly 2-3 sentences. "
-                "Focus on the role, key responsibilities, and top required skills. "
-                "Be concise and professional. Return only the summary, no labels or extra text.\n\n"
-                f"JOB DESCRIPTION:\n{jd_text[:3000]}"
-            )
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[{"role": "user", "content": prompt}],
-                temperature=0.3,
-                max_tokens=200,
-            )
-        return (response.choices[0].message.content or "").strip()
+        prompt = (
+            "Summarize the following job description in exactly 2-3 sentences. "
+            "Focus on the role, key responsibilities, and top required skills. "
+            "Be concise and professional. Return only the summary, no labels or extra text.\n\n"
+            f"JOB DESCRIPTION:\n{jd_text[:3000]}"
+        )
+        return _groq_chat(
+            [{"role": "user", "content": prompt}],
+            temperature=0.3,
+            max_tokens=200,
+        ).strip()
     except Exception:
         return jd_text[:300].strip() + ("…" if len(jd_text) > 300 else "")
 
 
-async def generate_suggestions(
+def generate_suggestions_sync(
     resume_text: str,
     jd_text: str,
     missing_skills: list[str],
@@ -175,30 +185,23 @@ async def generate_suggestions(
         return _rule_based_suggestions(resume_text, missing_skills)
 
     try:
-        import httpx
-        from groq import Groq
-        with httpx.Client(trust_env=False) as http_client:
-            client = Groq(api_key=settings.groq_api_key, http_client=http_client)
+        prompt = (
+            f"FULL RESUME TEXT:\n{resume_text}\n\n"
+            "JOB DESCRIPTION (context only — do not add JD-only skills to bullets):\n"
+            f"{jd_text[:3000]}\n\n"
+            "Pick the 3 weakest or most underdeveloped bullets and rewrite them "
+            "using facts from the full resume. Each suggestion must be 50–60 words — "
+            "preserve all metrics and technologies, cut filler only."
+        )
 
-            prompt = (
-                f"FULL RESUME TEXT:\n{resume_text}\n\n"
-                "JOB DESCRIPTION (context only — do not add JD-only skills to bullets):\n"
-                f"{jd_text[:3000]}\n\n"
-                "Pick the 3 weakest or most underdeveloped bullets and rewrite them "
-                "using facts from the full resume. Each suggestion must be 50–60 words — "
-                "preserve all metrics and technologies, cut filler only."
-            )
-
-            response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
-                messages=[
-                    {"role": "system", "content": _SYSTEM_PROMPT},
-                    {"role": "user", "content": prompt},
-                ],
-                temperature=0.25,
-                max_tokens=1000,
-            )
-        content = response.choices[0].message.content or "[]"
+        content = _groq_chat(
+            [
+                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "user", "content": prompt},
+            ],
+            temperature=0.25,
+            max_tokens=1000,
+        )
         content = re.sub(r"^```[a-z]*\n?", "", content.strip())
         content = re.sub(r"\n?```$", "", content.strip())
         suggestions = json.loads(content)
@@ -206,3 +209,17 @@ async def generate_suggestions(
 
     except Exception:
         return _rule_based_suggestions(resume_text, missing_skills)
+
+
+async def summarize_job_description(jd_text: str) -> str:
+    return await asyncio.to_thread(summarize_job_description_sync, jd_text)
+
+
+async def generate_suggestions(
+    resume_text: str,
+    jd_text: str,
+    missing_skills: list[str],
+) -> list[dict]:
+    return await asyncio.to_thread(
+        generate_suggestions_sync, resume_text, jd_text, missing_skills
+    )

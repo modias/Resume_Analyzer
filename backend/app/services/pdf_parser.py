@@ -12,9 +12,14 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 
 def _clean_text(text: str) -> str:
-    text = re.sub(r"\s+", " ", text)
+    """Normalize whitespace per line while preserving line breaks for structure parsing."""
     text = re.sub(r"[^\x00-\x7F]+", " ", text)
-    return text.strip()
+    lines: list[str] = []
+    for line in text.splitlines():
+        cleaned = re.sub(r"[ \t]+", " ", line).strip()
+        if cleaned:
+            lines.append(cleaned)
+    return "\n".join(lines)
 
 
 def count_quantified_bullets(text: str) -> int:

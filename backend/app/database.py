@@ -34,6 +34,7 @@ async def _migrate(conn) -> None:
         "ALTER TABLE users ADD COLUMN verification_expires_at DATETIME",
         "ALTER TABLE users ADD COLUMN dream_job VARCHAR(120) DEFAULT ''",
         "ALTER TABLE users ADD COLUMN linkedin_id VARCHAR(120)",
+        "ALTER TABLE analyses ADD COLUMN resume_text TEXT DEFAULT ''",
         # applications table safety net (create_all handles this, but kept for old DBs)
         """
         CREATE TABLE IF NOT EXISTS applications (

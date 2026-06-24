@@ -1,5 +1,72 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+export const BACKEND_TIMEOUT_MESSAGE =
+  "Request timed out — make sure the backend is running on port 8000";
+
+export const BACKEND_OFFLINE_BANNER =
+  "Backend server not detected on port 8000 — start it with: cd backend && uvicorn main:app --reload --port 8000";
+
+const DEFAULT_TIMEOUT_MS = 8_000;
+const ANALYZE_TIMEOUT_MS = 15_000;
+const SUGGESTIONS_TIMEOUT_MS = 30_000;
+
+export function isTimeoutError(err: unknown): boolean {
+  return (
+    (err instanceof DOMException && err.name === "AbortError") ||
+    (err instanceof Error && err.message === BACKEND_TIMEOUT_MESSAGE)
+  );
+}
+
+export function formatApiError(err: unknown, fallback: string): string {
+  if (isTimeoutError(err)) return BACKEND_TIMEOUT_MESSAGE;
+  if (err instanceof Error) return err.message;
+  return fallback;
+}
+
+function timeoutForPath(path: string): number {
+  if (path.startsWith("/resume/suggestions")) return SUGGESTIONS_TIMEOUT_MS;
+  if (path.startsWith("/resume/analyze")) return ANALYZE_TIMEOUT_MS;
+  return DEFAULT_TIMEOUT_MS;
+}
+
+export function fetchWithTimeout(
+  url: string,
+  options: RequestInit = {},
+  timeoutMs?: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs ?? DEFAULT_TIMEOUT_MS);
+
+  const { signal: externalSignal, ...rest } = options;
+
+  if (externalSignal) {
+    if (externalSignal.aborted) {
+      clearTimeout(timer);
+      controller.abort();
+    } else {
+      externalSignal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+  }
+
+  return fetch(url, { ...rest, signal: controller.signal })
+    .catch((err: unknown) => {
+      if (err instanceof DOMException && err.name === "AbortError") {
+        throw new Error(BACKEND_TIMEOUT_MESSAGE);
+      }
+      throw err;
+    })
+    .finally(() => clearTimeout(timer));
+}
+
+export async function checkBackendHealth(): Promise<boolean> {
+  try {
+    const response = await fetchWithTimeout(`${API_BASE}/health`, {}, 5_000);
+    return response.ok;
+  } catch {
+    return false;
+  }
+}
+
 // ─── Token storage ────────────────────────────────────────────────────────────
 
 const TOKEN_KEY = "ii_access_token";
@@ -41,13 +108,14 @@ export function setCachedUser(user: User): void {
 
 interface FetchOptions extends RequestInit {
   skipAuth?: boolean;
+  timeoutMs?: number;
 }
 
 export async function apiFetch<T = unknown>(
   path: string,
   options: FetchOptions = {}
 ): Promise<T> {
-  const { skipAuth = false, ...rest } = options;
+  const { skipAuth = false, timeoutMs, ...rest } = options;
   const token = getToken();
 
   const headers: Record<string, string> = {
@@ -58,10 +126,11 @@ export async function apiFetch<T = unknown>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...rest,
-    headers,
-  });
+  const response = await fetchWithTimeout(
+    `${API_BASE}${path}`,
+    { ...rest, headers },
+    timeoutMs ?? timeoutForPath(path)
+  );
 
   if (response.status === 401) {
     clearToken();
@@ -180,11 +249,11 @@ export async function uploadResume(resume: File): Promise<{ uploaded: boolean; f
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE}/resume/upload`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  const response = await fetchWithTimeout(
+    `${API_BASE}/resume/upload`,
+    { method: "POST", headers, body: formData },
+    DEFAULT_TIMEOUT_MS
+  );
 
   if (response.status === 401) {
     clearToken();
@@ -218,6 +287,7 @@ export interface OptimizationSuggestion {
 }
 
 export interface AnalyzeResponse {
+  analysis_id: number;
   match_score: number;
   required_coverage: number;
   preferred_coverage: number;
@@ -225,6 +295,11 @@ export interface AnalyzeResponse {
   extracted_skills: string[];
   required_skills: SkillMatch[];
   missing_skills: string[];
+  suggestions: OptimizationSuggestion[];
+  resume_text: string;
+}
+
+export interface SuggestionsResponse {
   suggestions: OptimizationSuggestion[];
 }
 
@@ -245,11 +320,11 @@ export async function analyzeResume(
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE}/resume/analyze`, {
-    method: "POST",
-    headers,
-    body: formData,
-  });
+  const response = await fetchWithTimeout(
+    `${API_BASE}/resume/analyze`,
+    { method: "POST", headers, body: formData },
+    ANALYZE_TIMEOUT_MS
+  );
 
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -257,6 +332,67 @@ export async function analyzeResume(
   }
 
   return response.json();
+}
+
+export async function fetchSuggestions(analysisId: number): Promise<SuggestionsResponse> {
+  return apiFetch<SuggestionsResponse>(`/resume/suggestions?analysis_id=${analysisId}`, {
+    timeoutMs: SUGGESTIONS_TIMEOUT_MS,
+  });
+}
+
+export interface StructuredResumePayload {
+  name: string;
+  contact: string;
+  sections: {
+    title: string;
+    entries: (
+      | {
+          type: "entry";
+          title: string;
+          subtitle: string;
+          location: string;
+          date: string;
+          bullets: string[];
+        }
+      | {
+          type: "project";
+          name: string;
+          tech: string;
+          date: string;
+          bullets: string[];
+        }
+      | { type: "skills"; text: string }
+    )[];
+  }[];
+}
+
+export async function exportResumePdf(
+  structuredResume: StructuredResumePayload
+): Promise<Blob> {
+  const token = getToken();
+
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
+  const response = await fetchWithTimeout(
+    `${API_BASE}/resume/export-pdf`,
+    { method: "POST", headers, body: JSON.stringify(structuredResume) },
+    DEFAULT_TIMEOUT_MS
+  );
+
+  if (response.status === 401) {
+    clearToken();
+    throw new Error("Session expired. Please log in again.");
+  }
+
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.detail ?? `PDF export failed (${response.status})`);
+  }
+
+  return response.blob();
 }
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -346,11 +482,11 @@ export async function saveSkillSession(
   const token = getToken();
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
-  const response = await fetch(`${API_BASE}/interview/save-session`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ language, difficulty, questions }),
-  });
+  const response = await fetchWithTimeout(
+    `${API_BASE}/interview/save-session`,
+    { method: "POST", headers, body: JSON.stringify({ language, difficulty, questions }) },
+    DEFAULT_TIMEOUT_MS
+  );
   if (response.status === 401) {
     clearToken();
     throw new Error("Session expired. Please log in again.");

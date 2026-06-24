@@ -1,14 +1,29 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
-import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2, Volume2, Loader2, Info } from "lucide-react";
-import { analyzeResume, type AnalyzeResponse } from "@/lib/api";
+import { Upload, FileText, Sparkles, CheckCircle2, XCircle, ArrowRight, CloudUpload, AlertCircle, Building2, Volume2, Loader2, Info, Copy, Download } from "lucide-react";
+import {
+  analyzeResume,
+  exportResumePdf,
+  fetchSuggestions,
+  checkBackendHealth,
+  formatApiError,
+  BACKEND_OFFLINE_BANNER,
+  isTimeoutError,
+  type AnalyzeResponse,
+} from "@/lib/api";
+import {
+  parseResumeToStructured,
+  replaceBulletInStructured,
+  findMatchingOriginal,
+  type StructuredResume,
+} from "@/lib/resumeParser";
 import { getCoverageStatHint } from "@/lib/coverageStatHints";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { speakText, buildAnalysisSummary } from "@/lib/elevenlabs";
@@ -20,12 +35,26 @@ export default function AnalyzePage() {
   const [jobTitle, setJobTitle] = useState("");
   const [company, setCompany] = useState("");
   const [result, setResult] = useState<AnalyzeResponse | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [scoreLoading, setScoreLoading] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionsError, setSuggestionsError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [applied, setApplied] = useState<Set<number>>(new Set());
+  const [optimizedResumeText, setOptimizedResumeText] = useState("");
+  const [structuredResume, setStructuredResume] = useState<StructuredResume | null>(null);
+  const [applyError, setApplyError] = useState<string | null>(null);
+  const [copyMessage, setCopyMessage] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [speaking, setSpeaking] = useState(false);
   const [speakError, setSpeakError] = useState<string | null>(null);
+  const [backendOffline, setBackendOffline] = useState(false);
+  const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    checkBackendHealth().then((ok) => setBackendOffline(!ok));
+  }, []);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -34,6 +63,10 @@ export default function AnalyzePage() {
     if (f && f.type === "application/pdf") {
       setFile(f);
       setResult(null);
+      setOptimizedResumeText("");
+      setStructuredResume(null);
+      setApplied(new Set());
+      setApplyError(null);
       setError(null);
     }
   };
@@ -43,6 +76,10 @@ export default function AnalyzePage() {
     if (f) {
       setFile(f);
       setResult(null);
+      setOptimizedResumeText("");
+      setStructuredResume(null);
+      setApplied(new Set());
+      setApplyError(null);
       setError(null);
     }
   };
@@ -58,25 +95,110 @@ export default function AnalyzePage() {
     }
 
     setError(null);
-    setLoading(true);
+    setApplyError(null);
+    setCopyMessage(null);
+    setDownloadError(null);
+    setSuggestionsError(null);
+    setScoreLoading(true);
+    setSuggestionsLoading(false);
+    setLoadingMessage("Parsing resume and computing match score...");
+    setResult(null);
     setApplied(new Set());
+    setOptimizedResumeText("");
+    setStructuredResume(null);
 
     try {
       const data = await analyzeResume(file, jd, jobTitle, company);
       setResult(data);
+      setOptimizedResumeText(data.resume_text);
+      setStructuredResume(parseResumeToStructured(data.resume_text));
+      setScoreLoading(false);
+      setLoadingMessage("Generating AI suggestions (this may take 5–10s)...");
+
+      setSuggestionsLoading(true);
+      try {
+        const { suggestions } = await fetchSuggestions(data.analysis_id);
+        setResult((prev) => (prev ? { ...prev, suggestions } : prev));
+      } catch (err) {
+        setSuggestionsError(
+          isTimeoutError(err)
+            ? "AI suggestions are taking longer than usual — try again"
+            : formatApiError(err, "Failed to load suggestions.")
+        );
+      } finally {
+        setSuggestionsLoading(false);
+        setLoadingMessage(null);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Analysis failed. Please try again.");
-    } finally {
-      setLoading(false);
+      setError(formatApiError(err, "Analysis failed. Please try again."));
+      setScoreLoading(false);
+      setSuggestionsLoading(false);
+      setLoadingMessage(null);
     }
   };
 
-  const toggleApply = (i: number) => {
-    setApplied((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) { next.delete(i); } else { next.add(i); }
-      return next;
-    });
+  const handleApply = (i: number) => {
+    if (!result || applied.has(i)) return;
+
+    const resume = structuredResume ?? parseResumeToStructured(optimizedResumeText || result.resume_text);
+    const { original, suggested } = result.suggestions[i];
+
+    const matched = findMatchingOriginal(
+      optimizedResumeText || result.resume_text,
+      resume,
+      original
+    );
+
+    if (!matched) {
+      setApplyError("Couldn't find the original text in your resume. Try copying the suggestion manually.");
+      return;
+    }
+
+    setApplyError(null);
+    setOptimizedResumeText((prev) => prev.replace(matched, suggested));
+    setStructuredResume(replaceBulletInStructured(resume, matched, suggested));
+    setApplied((prev) => new Set(prev).add(i));
+  };
+
+  const canExport =
+    applied.size > 0 &&
+    result != null &&
+    structuredResume != null &&
+    optimizedResumeText !== result.resume_text;
+
+  const handleCopy = async () => {
+    if (!canExport) return;
+    try {
+      await navigator.clipboard.writeText(optimizedResumeText);
+      setCopyMessage("Copied to clipboard");
+      setTimeout(() => setCopyMessage(null), 2000);
+    } catch {
+      setCopyMessage("Failed to copy");
+      setTimeout(() => setCopyMessage(null), 2000);
+    }
+  };
+
+  const handleDownloadPdf = async () => {
+    if (!canExport || !structuredResume) return;
+    setDownloadError(null);
+    setDownloading(true);
+    try {
+      const payload =
+        structuredResume.sections.length > 0
+          ? structuredResume
+          : parseResumeToStructured(optimizedResumeText);
+      const blob = await exportResumePdf(payload);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "optimized-resume.pdf";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "PDF download failed.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   const handleSpeak = async () => {
@@ -108,6 +230,21 @@ export default function AnalyzePage() {
         <h1 className="text-2xl font-bold text-foreground">Analyze Resume</h1>
         <p className="text-muted-foreground text-sm mt-1">Upload your resume and paste a job description to compute your match score</p>
       </motion.div>
+
+      {/* Backend offline banner */}
+      <AnimatePresence>
+        {backendOffline && (
+          <motion.div
+            initial={{ opacity: 0, y: -4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="flex items-center gap-3 p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-400 text-sm"
+          >
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            {BACKEND_OFFLINE_BANNER}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Upload */}
@@ -230,10 +367,10 @@ export default function AnalyzePage() {
         <Button
           size="lg"
           onClick={handleCompute}
-          disabled={loading}
+          disabled={scoreLoading || suggestionsLoading}
           className="gap-2 px-8 bg-primary hover:bg-primary/90 text-primary-foreground"
         >
-          {loading ? (
+          {scoreLoading ? (
             <>
               <motion.div
                 animate={{ rotate: 360 }}
@@ -251,6 +388,10 @@ export default function AnalyzePage() {
         </Button>
       </motion.div>
 
+      {loadingMessage && (
+        <p className="text-center text-xs text-muted-foreground -mt-4">{loadingMessage}</p>
+      )}
+
       {/* Results */}
       <AnimatePresence>
         {result && (
@@ -263,7 +404,7 @@ export default function AnalyzePage() {
             <div className="flex items-center gap-3 py-2">
               <div className="h-px flex-1 bg-border" />
               <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30 text-xs px-3">
-                Analysis Complete —{" "}
+                {suggestionsLoading ? "Match Score Ready —" : "Analysis Complete —"}{" "}
                 <span className={`font-bold ml-1 ${scoreColor}`}>
                   {result.match_score.toFixed(1)}% Match
                 </span>
@@ -379,16 +520,44 @@ export default function AnalyzePage() {
             </div>
 
             {/* Optimization suggestions */}
-            {result.suggestions.length > 0 && (
+            {(suggestionsLoading || result.suggestions.length > 0 || suggestionsError) && (
               <Card className="border-border bg-card">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-primary" />
                     Resume Optimization Suggestions
+                    {suggestionsLoading && (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin text-muted-foreground" />
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  {result.suggestions.map((s, i) => (
+                  {suggestionsError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {suggestionsError}
+                    </p>
+                  )}
+                  {suggestionsLoading && (
+                    <div className="space-y-3">
+                      {[0, 1, 2].map((i) => (
+                        <div key={i} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3 animate-pulse">
+                          <div className="h-3 bg-muted rounded w-1/4" />
+                          <div className="h-4 bg-muted rounded w-full" />
+                          <div className="h-3 bg-muted rounded w-1/3" />
+                          <div className="h-4 bg-muted rounded w-5/6" />
+                          <div className="h-7 bg-muted rounded w-24" />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {!suggestionsLoading && applyError && (
+                    <p className="text-xs text-red-400 flex items-center gap-1.5">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      {applyError}
+                    </p>
+                  )}
+                  {!suggestionsLoading && result.suggestions.map((s, i) => (
                     <div key={i} className="rounded-xl border border-border bg-muted/20 p-4 space-y-3">
                       <div>
                         <p className="text-xs text-muted-foreground font-medium mb-1 uppercase tracking-wide">Original</p>
@@ -407,7 +576,8 @@ export default function AnalyzePage() {
                       <Button
                         size="sm"
                         variant={applied.has(i) ? "secondary" : "outline"}
-                        onClick={() => toggleApply(i)}
+                        onClick={() => handleApply(i)}
+                        disabled={applied.has(i)}
                         className={applied.has(i)
                           ? "text-xs bg-green-500/15 text-green-400 border-green-500/20 hover:bg-green-500/20"
                           : "text-xs border-primary/30 text-primary hover:bg-primary/10"}
@@ -420,6 +590,62 @@ export default function AnalyzePage() {
                       </Button>
                     </div>
                   ))}
+                </CardContent>
+              </Card>
+            )}
+
+            {result.resume_text && (
+              <Card className="border-border bg-card">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <CardTitle className="text-sm font-semibold text-foreground flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-primary" />
+                      Optimized Resume
+                    </CardTitle>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleCopy}
+                        disabled={!canExport}
+                        className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10 h-7 px-3"
+                      >
+                        <Copy className="w-3 h-3" />
+                        Copy
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={handleDownloadPdf}
+                        disabled={!canExport || downloading}
+                        className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10 h-7 px-3"
+                      >
+                        {downloading ? (
+                          <><Loader2 className="w-3 h-3 animate-spin" /> Downloading…</>
+                        ) : (
+                          <><Download className="w-3 h-3" /> Download PDF</>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  {copyMessage && (
+                    <p className="text-xs text-green-400 mt-1">{copyMessage}</p>
+                  )}
+                  {downloadError && (
+                    <p className="text-xs text-red-400 mt-1">{downloadError}</p>
+                  )}
+                </CardHeader>
+                <CardContent>
+                  <div className="rounded-lg border border-border bg-muted/20 p-4 max-h-64 overflow-y-auto">
+                    <p className="text-sm text-foreground whitespace-pre-wrap leading-relaxed">
+                      {optimizedResumeText || result.resume_text}
+                    </p>
+                  </div>
+                  {!canExport && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Apply at least one suggestion to enable copy and download.
+                    </p>
+                  )}
                 </CardContent>
               </Card>
             )}

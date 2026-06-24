@@ -1,3 +1,4 @@
+from typing import Literal, Union
 from pydantic import BaseModel
 import datetime
 
@@ -14,6 +15,7 @@ class OptimizationSuggestion(BaseModel):
 
 
 class AnalyzeResponse(BaseModel):
+    analysis_id: int
     match_score: float
     required_coverage: float
     preferred_coverage: float
@@ -22,6 +24,47 @@ class AnalyzeResponse(BaseModel):
     required_skills: list[SkillMatch]
     missing_skills: list[str]
     suggestions: list[OptimizationSuggestion]
+    resume_text: str
+
+
+class SuggestionsResponse(BaseModel):
+    suggestions: list[OptimizationSuggestion]
+
+
+class ResumeEntryItem(BaseModel):
+    type: Literal["entry"]
+    title: str = ""
+    subtitle: str = ""
+    location: str = ""
+    date: str = ""
+    bullets: list[str] = []
+
+
+class ResumeProjectItem(BaseModel):
+    type: Literal["project"]
+    name: str = ""
+    tech: str = ""
+    date: str = ""
+    bullets: list[str] = []
+
+
+class ResumeSkillsItem(BaseModel):
+    type: Literal["skills"]
+    text: str = ""
+
+
+ResumeSectionEntry = Union[ResumeEntryItem, ResumeProjectItem, ResumeSkillsItem]
+
+
+class ResumeSectionSchema(BaseModel):
+    title: str = ""
+    entries: list[ResumeEntryItem | ResumeProjectItem | ResumeSkillsItem] = []
+
+
+class StructuredResume(BaseModel):
+    name: str = ""
+    contact: str = ""
+    sections: list[ResumeSectionSchema] = []
 
 
 class AnalysisOut(BaseModel):
