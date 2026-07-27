@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     frontend_url: str = "http://localhost:3000"
+    # Public API URL (no trailing slash). Used for Google OAuth redirect URI.
+    backend_url: str = "http://localhost:8000"
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"
 

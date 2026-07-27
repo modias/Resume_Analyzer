@@ -172,13 +172,18 @@ _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
 _GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
+def _google_redirect_uri() -> str:
+    s = get_settings()
+    return f"{s.backend_url.rstrip('/')}/auth/google/callback"
+
+
 @router.get("/google")
 async def google_login():
     """Redirect the user to Google's authorization page."""
     s = get_settings()
     if not s.google_client_id:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured on this server.")
-    redirect_uri = "http://localhost:8000/auth/google/callback"
+    redirect_uri = _google_redirect_uri()
     params = {
         "response_type": "code",
         "client_id": s.google_client_id,
@@ -204,7 +209,7 @@ async def google_callback(
     if error or not code:
         return RedirectResponse(url=f"{frontend_url}/login?google_error=access_denied")
 
-    redirect_uri = "http://localhost:8000/auth/google/callback"
+    redirect_uri = _google_redirect_uri()
 
     # 1. Exchange code for access token
     try:
