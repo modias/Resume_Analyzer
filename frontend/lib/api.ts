@@ -1,16 +1,18 @@
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 export const BACKEND_TIMEOUT_MESSAGE =
-  "Request timed out — make sure the backend is running on port 8000";
+  "Request timed out — the backend may be waking up. Wait a moment and try again.";
 
 export const BACKEND_OFFLINE_BANNER =
-  "Backend server not detected on port 8000 — start it with: cd backend && uvicorn main:app --reload --port 8000";
+  "Backend unavailable — if this is the first request in a while, wait ~30s for the free server to wake up, then refresh.";
 
 const DEFAULT_TIMEOUT_MS = 8_000;
 const ANALYZE_TIMEOUT_MS = 15_000;
 const SUGGESTIONS_TIMEOUT_MS = 30_000;
 /** Live job search (JSearch) can take 10–20s+ on a cold fetch. */
 const JOBS_TIMEOUT_MS = 60_000;
+/** Render free tier cold starts can take 30–60s. */
+const HEALTH_TIMEOUT_MS = 60_000;
 
 export function isTimeoutError(err: unknown): boolean {
   return (
@@ -63,7 +65,7 @@ export function fetchWithTimeout(
 
 export async function checkBackendHealth(): Promise<boolean> {
   try {
-    const response = await fetchWithTimeout(`${API_BASE}/health`, {}, 5_000);
+    const response = await fetchWithTimeout(`${API_BASE}/health`, {}, HEALTH_TIMEOUT_MS);
     return response.ok;
   } catch {
     return false;
