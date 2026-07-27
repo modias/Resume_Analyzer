@@ -278,7 +278,7 @@ async def fetch_linkedin_jobs(
         params["remote_jobs_only"] = "true"
 
     try:
-        async with httpx.AsyncClient(timeout=15) as client:
+        async with httpx.AsyncClient(timeout=45) as client:
             resp = await client.get(_JSEARCH_URL, headers=headers, params=params)
             resp.raise_for_status()
             raw = resp.json().get("data", [])

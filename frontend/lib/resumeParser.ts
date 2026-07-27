@@ -221,7 +221,7 @@ function isProjectEntry(line: string): boolean {
 }
 
 function normalizeDateString(raw: string): string {
-  let s = raw.trim().replace(/[–—]/g, " - ").replace(/\s+/g, " ");
+  const s = raw.trim().replace(/[–—]/g, " - ").replace(/\s+/g, " ");
 
   const presentFirst = s.match(
     new RegExp(`^(?:Present|Current)(?:\\s*-\\s*|\\s+)(${MONTH_DATE})$`, "i")
@@ -421,9 +421,9 @@ function parseProjectEntry(line: string, pendingBefore: string[]): ResumeProject
   const project = emptyProject();
   project.date = extractDate(line);
   const remainder = stripDate(line);
-  let content = [...pendingBefore.filter(Boolean)];
+  const content = [...pendingBefore.filter(Boolean)];
   if (remainder) content.push(remainder);
-  let joined = content.join(" ").replace(/\s+/g, " ").trim();
+  const joined = content.join(" ").replace(/\s+/g, " ").trim();
 
   if (content.includes("|")) {
     const pipeIdx = joined.indexOf("|");

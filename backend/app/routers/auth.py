@@ -164,124 +164,123 @@ async def delete_me(
 
 
 # ---------------------------------------------------------------------------
-# LinkedIn OAuth
+# Google OAuth
 # ---------------------------------------------------------------------------
 
-_LI_AUTH_URL = "https://www.linkedin.com/oauth/v2/authorization"
-_LI_TOKEN_URL = "https://www.linkedin.com/oauth/v2/accessToken"
-_LI_USERINFO_URL = "https://api.linkedin.com/v2/userinfo"
+_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
+_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 
 
-@router.get("/linkedin")
-async def linkedin_login():
-    """Redirect the user to LinkedIn's authorization page."""
+@router.get("/google")
+async def google_login():
+    """Redirect the user to Google's authorization page."""
     s = get_settings()
-    if not s.linkedin_client_id:
-        raise HTTPException(status_code=503, detail="LinkedIn OAuth is not configured on this server.")
-    redirect_uri = "http://localhost:8000/auth/linkedin/callback"
+    if not s.google_client_id:
+        raise HTTPException(status_code=503, detail="Google OAuth is not configured on this server.")
+    redirect_uri = "http://localhost:8000/auth/google/callback"
     params = {
         "response_type": "code",
-        "client_id": s.linkedin_client_id,
+        "client_id": s.google_client_id,
         "redirect_uri": redirect_uri,
-        "scope": "openid profile email",
+        "scope": "openid email profile",
+        "access_type": "online",
+        "prompt": "select_account",
     }
-    url = f"{_LI_AUTH_URL}?{urllib.parse.urlencode(params)}"
+    url = f"{_GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
     return RedirectResponse(url=url)
 
 
-@router.get("/linkedin/callback")
-async def linkedin_callback(
+@router.get("/google/callback")
+async def google_callback(
     code: str | None = None,
     error: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange LinkedIn auth code for a user profile and issue a JWT."""
+    """Exchange Google auth code for a user profile and issue a JWT."""
     s = get_settings()
     frontend_url = s.frontend_url or "http://localhost:3000"
 
     if error or not code:
-        return RedirectResponse(url=f"{frontend_url}/login?li_error=access_denied")
+        return RedirectResponse(url=f"{frontend_url}/login?google_error=access_denied")
 
-    redirect_uri = "http://localhost:8000/auth/linkedin/callback"
+    redirect_uri = "http://localhost:8000/auth/google/callback"
 
     # 1. Exchange code for access token
     try:
         async with httpx.AsyncClient() as client:
             token_resp = await client.post(
-                _LI_TOKEN_URL,
+                _GOOGLE_TOKEN_URL,
                 data={
                     "grant_type": "authorization_code",
                     "code": code,
                     "redirect_uri": redirect_uri,
-                    "client_id": s.linkedin_client_id,
-                    "client_secret": s.linkedin_client_secret,
+                    "client_id": s.google_client_id,
+                    "client_secret": s.google_client_secret,
                 },
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 timeout=10,
             )
             if not token_resp.is_success:
                 logger.warning(
-                    "LinkedIn token exchange failed: status=%s body=%s",
+                    "Google token exchange failed: status=%s body=%s",
                     token_resp.status_code,
                     token_resp.text,
                 )
-                return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+                return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
 
             access_token = token_resp.json()["access_token"]
 
-            # 2. Fetch LinkedIn profile via OpenID Connect userinfo
+            # 2. Fetch Google profile via OpenID Connect userinfo
             profile_resp = await client.get(
-                _LI_USERINFO_URL,
+                _GOOGLE_USERINFO_URL,
                 headers={"Authorization": f"Bearer {access_token}"},
                 timeout=10,
             )
             if not profile_resp.is_success:
                 logger.warning(
-                    "LinkedIn userinfo failed: status=%s body=%s",
+                    "Google userinfo failed: status=%s body=%s",
                     profile_resp.status_code,
                     profile_resp.text,
                 )
-                return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+                return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
 
             profile = profile_resp.json()
     except Exception as exc:
-        logger.warning("LinkedIn OAuth exception: %s", exc)
-        return RedirectResponse(url=f"{frontend_url}/login?li_error=oauth_failed")
+        logger.warning("Google OAuth exception: %s", exc)
+        return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
 
-    li_id: str = profile.get("sub", "")
+    google_id: str = profile.get("sub", "")
     email: str = profile.get("email", "")
-    name: str = profile.get("name", profile.get("given_name", "LinkedIn User"))
+    name: str = profile.get("name", profile.get("given_name", "Google User"))
 
-    if not li_id:
-        return RedirectResponse(url=f"{frontend_url}/login?li_error=no_profile")
+    if not google_id:
+        return RedirectResponse(url=f"{frontend_url}/login?google_error=no_profile")
 
     # 3. Find or create user
     user: User | None = None
 
-    # Try by linkedin_id first
-    result = await db.execute(select(User).where(User.linkedin_id == li_id))
+    result = await db.execute(select(User).where(User.google_id == google_id))
     user = result.scalar_one_or_none()
 
-    # Try by email if we have one
     if not user and email:
         result = await db.execute(select(User).where(User.email == email))
         user = result.scalar_one_or_none()
         if user:
-            user.linkedin_id = li_id
+            user.google_id = google_id
 
-    # Create new user
     if not user:
-        fallback_email = email or f"li_{li_id}@linkedin.local"
+        fallback_email = email or f"google_{google_id}@google.local"
         user = User(
             name=name,
             email=fallback_email,
             hashed_password="",
-            linkedin_id=li_id,
+            google_id=google_id,
             is_verified=True,
         )
         db.add(user)
         await db.flush()
-        logger.info("New LinkedIn user created: id=%s email=%s", user.id, fallback_email)
+        logger.info("New Google user created: id=%s email=%s", user.id, fallback_email)
 
     await db.commit()
     await db.refresh(user)

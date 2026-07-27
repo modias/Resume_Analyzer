@@ -11,9 +11,9 @@ class Settings(BaseSettings):
     groq_api_key: str = ""
     rapidapi_key: str = ""
 
-    # LinkedIn OAuth
-    linkedin_client_id: str = ""
-    linkedin_client_secret: str = ""
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
     frontend_url: str = "http://localhost:3000"
 
     database_url: str = "sqlite+aiosqlite:///./internship_intelligence.db"

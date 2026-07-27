@@ -87,15 +87,15 @@ export default function LoginPage() {
       return;
     }
 
-    // Handle LinkedIn OAuth redirect — ?token=...&user=...
+    // Handle Google OAuth redirect — ?token=...&user=...
     const params = new URLSearchParams(window.location.search);
     const token = params.get("token");
     const userParam = params.get("user");
-    const liError = params.get("li_error");
+    const googleError = params.get("google_error");
 
-    if (liError) {
+    if (googleError) {
       window.history.replaceState({}, "", "/login");
-      setError("LinkedIn sign-in failed. Make sure the LinkedIn app has 'Sign In with LinkedIn using OpenID Connect' enabled and the redirect URI is set correctly.");
+      setError("Google sign-in failed. Make sure the Google OAuth client has the redirect URI http://localhost:8000/auth/google/callback configured.");
       return;
     }
 
@@ -289,7 +289,7 @@ export default function LoginPage() {
                   onSubmit={handleLogin}
                   className="space-y-3"
                 >
-                  <LinkedInButton />
+                  <GoogleButton />
                   <Divider />
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-muted-foreground">Email</label>
@@ -330,7 +330,7 @@ export default function LoginPage() {
                 >
                   <StepDots step={0} total={2} />
                   <p className="text-xs text-muted-foreground text-center -mt-2 mb-3">Step 1 of 2 — Create your account</p>
-                  <LinkedInButton label="Sign up with LinkedIn" />
+                  <GoogleButton label="Sign up with Google" />
                   <Divider />
 
                   <div className="space-y-1.5">
@@ -480,23 +480,26 @@ export default function LoginPage() {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function LinkedInButton({ label = "Continue with LinkedIn" }: { label?: string }) {
+function GoogleButton({ label = "Continue with Google" }: { label?: string }) {
   const [pending, setPending] = useState(false);
   return (
     <a
-      href={`${API_BASE}/auth/linkedin`}
+      href={`${API_BASE}/auth/google`}
       onClick={() => setPending(true)}
-      className="flex w-full items-center justify-center gap-2.5 px-4 py-2.5 rounded-lg border border-[#0A66C2]/40 bg-[#0A66C2]/10 hover:bg-[#0A66C2]/20 text-sm font-semibold text-[#5599e0] transition-colors"
+      className="flex w-full items-center justify-center gap-2.5 px-4 py-2.5 rounded-lg border border-border bg-muted/30 hover:bg-muted/50 text-sm font-semibold text-foreground transition-colors"
     >
       {pending ? (
         <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-          className="w-4 h-4 border-2 border-[#0A66C2]/30 border-t-[#0A66C2] rounded-full" />
+          className="w-4 h-4 border-2 border-muted-foreground/30 border-t-foreground rounded-full" />
       ) : (
-        <svg className="w-4 h-4 text-[#0A66C2]" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z" />
+        <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
+          <path fill="#EA4335" d="M12 10.2v3.9h5.5c-.2 1.3-.9 2.4-1.9 3.1l3.1 2.4c1.8-1.7 2.9-4.1 2.9-7 0-.7-.1-1.3-.2-1.9H12z" />
+          <path fill="#34A853" d="M5.3 14.3l-.8.6-2.5 1.9C3.6 20.1 7.5 22.5 12 22.5c2.7 0 5-.9 6.7-2.4l-3.1-2.4c-.9.6-2 .9-3.6.9-2.8 0-5.1-1.9-6-4.4z" />
+          <path fill="#4A90E2" d="M3.9 7.3C3.3 8.5 3 9.7 3 11s.3 2.5.9 3.7c0 .1 2.8-2.2 2.8-2.2-.2-.5-.3-1-.3-1.5s.1-1 .3-1.5L3.9 7.3z" />
+          <path fill="#FBBC05" d="M12 5.4c1.5 0 2.8.5 3.8 1.5l2.8-2.8C16.9 2.4 14.7 1.5 12 1.5 7.5 1.5 3.6 3.9 2 7.3l2.8 2.2C5.7 7.2 8.1 5.4 12 5.4z" />
         </svg>
       )}
-      {pending ? "Redirecting to LinkedIn…" : label}
+      {pending ? "Redirecting to Google…" : label}
     </a>
   );
 }

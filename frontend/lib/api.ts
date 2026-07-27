@@ -9,6 +9,8 @@ export const BACKEND_OFFLINE_BANNER =
 const DEFAULT_TIMEOUT_MS = 8_000;
 const ANALYZE_TIMEOUT_MS = 15_000;
 const SUGGESTIONS_TIMEOUT_MS = 30_000;
+/** Live job search (JSearch) can take 10–20s+ on a cold fetch. */
+const JOBS_TIMEOUT_MS = 60_000;
 
 export function isTimeoutError(err: unknown): boolean {
   return (
@@ -26,6 +28,7 @@ export function formatApiError(err: unknown, fallback: string): string {
 function timeoutForPath(path: string): number {
   if (path.startsWith("/resume/suggestions")) return SUGGESTIONS_TIMEOUT_MS;
   if (path.startsWith("/resume/analyze")) return ANALYZE_TIMEOUT_MS;
+  if (path.startsWith("/jobs")) return JOBS_TIMEOUT_MS;
   return DEFAULT_TIMEOUT_MS;
 }
 
@@ -164,7 +167,7 @@ export interface User {
   dream_companies: string[];
   dream_job: string;
   is_verified: boolean;
-  linkedin_id?: string | null;
+  google_id?: string | null;
   profile_picture_url?: string | null;
 }
 

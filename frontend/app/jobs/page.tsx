@@ -10,7 +10,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
-import { getJobs, getMe, hasUploadedResume, uploadResume, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
+import { getJobs, getMe, hasUploadedResume, uploadResume, formatApiError, isTimeoutError, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
 
 function MatchBadge({ score }: { score: number }) {
   const color =
@@ -51,6 +51,7 @@ export default function JobsPage() {
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Job | null>(null);
   const [dreamCompanies, setDreamCompanies] = useState<string[]>([]);
   const [hasResume, setHasResume] = useState<boolean | null>(null);
@@ -67,6 +68,7 @@ export default function JobsPage() {
     datePosted: DatePosted; remoteOnly: boolean; page: number;
   }) => {
     setLoading(true);
+    setFetchError(null);
     getJobs({
       search: params.search || undefined,
       location: params.location || undefined,
@@ -75,8 +77,18 @@ export default function JobsPage() {
       remote_only: params.remoteOnly || undefined,
       page: params.page,
     })
-      .then(setJobs)
-      .catch(() => setJobs([]))
+      .then((data) => {
+        setJobs(data);
+        setFetchError(null);
+      })
+      .catch((err) => {
+        setJobs([]);
+        setFetchError(
+          isTimeoutError(err)
+            ? "Job search timed out. Please try again."
+            : formatApiError(err, "Failed to load jobs.")
+        );
+      })
       .finally(() => setLoading(false));
   }, []);
 
@@ -329,8 +341,25 @@ export default function JobsPage() {
           </CardHeader>
           <CardContent className="p-0">
             {loading ? (
-              <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
                 <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                <p className="text-sm">Searching live jobs… this can take a moment.</p>
+              </div>
+            ) : fetchError ? (
+              <div className="flex flex-col items-center justify-center py-16 gap-3 text-muted-foreground">
+                <AlertCircle className="w-8 h-8 text-red-400 opacity-80" />
+                <p className="text-sm text-red-300 text-center max-w-md">{fetchError}</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="text-xs"
+                  onClick={() =>
+                    fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page })
+                  }
+                >
+                  Try again
+                </Button>
               </div>
             ) : sorted.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 gap-2 text-muted-foreground">
