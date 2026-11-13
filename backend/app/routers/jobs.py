@@ -16,98 +16,6 @@ EmploymentType = Literal["INTERN", "FULLTIME", "PARTTIME", "CONTRACTOR"]
 DatePosted = Literal["all", "today", "3days", "week", "month"]
 
 
-def _score_for_skills(user_skills: list[str], required_skills: list[str]) -> int:
-    if not required_skills:
-        return 50
-    user_lower = {s.lower() for s in user_skills if isinstance(s, str)}
-    req_lower = {s.lower() for s in required_skills if isinstance(s, str)}
-    if not req_lower:
-        return 50
-    matched = len(user_lower & req_lower)
-    return min(100, max(10, round(matched / len(req_lower) * 100)))
-
-
-def _priority_for_score(score: int) -> str:
-    if score >= 75:
-        return "🔥 Apply Now"
-    if score >= 55:
-        return "⚡ Strong Fit"
-    return "📌 Consider"
-
-
-def _rescore_mock_jobs(mock_jobs: list[dict], user_skills: list[str]) -> list[dict]:
-    scored: list[dict] = []
-    for job in mock_jobs:
-        score = _score_for_skills(user_skills, job.get("required_skills", []))
-        scored.append({
-            **job,
-            "match_score": score,
-            "apply_priority": _priority_for_score(score),
-            "market_frequency": min(99, score + 10),
-        })
-    scored.sort(key=lambda item: item["match_score"], reverse=True)
-    return scored
-
-
-# Mock data — used when RAPIDAPI_KEY is not configured
-_MOCK_JOBS: list[dict] = [
-    {
-        "id": 1, "company": "Google", "role": "Data Science Intern",
-        "match_score": 82, "demand_level": "High", "apply_priority": "🔥 Apply Now",
-        "required_skills": ["Python", "SQL", "Machine Learning", "GCP", "TensorFlow"],
-        "market_frequency": 94, "salary_estimate": "$8,000 / mo",
-        "apply_link": "https://www.google.com/about/careers/applications/jobs/results/?q=Data%20Science%20Intern",
-        "location": "Mountain View, CA",
-        "employer_logo": "", "posted_at": "",
-    },
-    {
-        "id": 2, "company": "Meta", "role": "ML Engineering Intern",
-        "match_score": 74, "demand_level": "High", "apply_priority": "⚡ Strong Fit",
-        "required_skills": ["PyTorch", "Python", "C++", "Deep Learning", "SQL"],
-        "market_frequency": 88, "salary_estimate": "$9,000 / mo",
-        "apply_link": "https://www.metacareers.com/jobs/?q=Machine%20Learning%20Intern",
-        "location": "Menlo Park, CA",
-        "employer_logo": "", "posted_at": "",
-    },
-    {
-        "id": 3, "company": "Stripe", "role": "Data Analyst Intern",
-        "match_score": 68, "demand_level": "Medium", "apply_priority": "⚡ Strong Fit",
-        "required_skills": ["SQL", "Python", "Tableau", "Statistics", "A/B Testing"],
-        "market_frequency": 72, "salary_estimate": "$7,200 / mo",
-        "apply_link": "https://stripe.com/jobs/search?query=Data%20Analyst%20Intern",
-        "location": "San Francisco, CA",
-        "employer_logo": "", "posted_at": "",
-    },
-    {
-        "id": 4, "company": "Airbnb", "role": "Analytics Engineering Intern",
-        "match_score": 61, "demand_level": "Medium", "apply_priority": "📌 Consider",
-        "required_skills": ["dbt", "SQL", "Python", "Spark", "Airflow"],
-        "market_frequency": 65, "salary_estimate": "$7,500 / mo",
-        "apply_link": "https://careers.airbnb.com/positions/?_roles=intern&_keywords=Analytics",
-        "location": "San Francisco, CA",
-        "employer_logo": "", "posted_at": "",
-    },
-    {
-        "id": 5, "company": "Netflix", "role": "Research Scientist Intern",
-        "match_score": 55, "demand_level": "Low", "apply_priority": "📌 Consider",
-        "required_skills": ["R", "Python", "Statistics", "Machine Learning", "SQL"],
-        "market_frequency": 58, "salary_estimate": "$8,500 / mo",
-        "apply_link": "https://jobs.netflix.com/search?q=Research%20Scientist%20Intern",
-        "location": "Los Gatos, CA",
-        "employer_logo": "", "posted_at": "",
-    },
-    {
-        "id": 6, "company": "Amazon", "role": "Business Intelligence Intern",
-        "match_score": 79, "demand_level": "High", "apply_priority": "🔥 Apply Now",
-        "required_skills": ["SQL", "Python", "AWS", "ETL", "Tableau"],
-        "market_frequency": 85, "salary_estimate": "$7,800 / mo",
-        "apply_link": "https://www.amazon.jobs/en/search?base_query=Business%20Intelligence%20Intern",
-        "location": "Seattle, WA",
-        "employer_logo": "", "posted_at": "",
-    },
-]
-
-
 @router.get("", response_model=list[JobOut])
 async def list_jobs(
     # Live search / API params (sent to JSearch)
@@ -164,8 +72,6 @@ async def list_jobs(
             num_pages=5,
         )
 
-    # Do not silently force mock jobs when live providers return nothing.
-    # Returning an empty list is clearer than showing a fixed set of fake jobs.
     results: list[dict] = live_jobs
 
     # Client-side filters
@@ -178,11 +84,3 @@ async def list_jobs(
 
     return [JobOut(**j) for j in results]
 
-
-@router.get("/{job_id}", response_model=JobOut)
-async def get_job(job_id: int, _: User = Depends(get_current_user)):
-    for job in _MOCK_JOBS:
-        if job["id"] == job_id:
-            return JobOut(**job)
-    from fastapi import HTTPException
-    raise HTTPException(status_code=404, detail="Job not found")

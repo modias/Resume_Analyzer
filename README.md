@@ -37,7 +37,6 @@ Resume_Analyzer/
 ├── backend/
 │   ├── main.py                  # FastAPI entry point
 │   ├── requirements.txt
-│   ├── .env.example
 │   └── app/
 │       ├── config.py
 │       ├── database.py
@@ -48,7 +47,7 @@ Resume_Analyzer/
 └── frontend/
     ├── app/                     # Next.js App Router pages
     ├── components/              # Shell, cards, charts, shadcn UI primitives
-    └── lib/                     # API client, ElevenLabs helpers, mock data
+    └── lib/                     # API client, ElevenLabs helpers
 ```
 
 ---
@@ -74,10 +73,9 @@ cd careercore
 ```bash
 cd backend
 pip install -r requirements.txt
-cp .env.example .env
 ```
 
-Edit `.env` and fill in your keys:
+Create `backend/.env` with your keys (see [Environment Variables](#environment-variables) for the full list):
 
 ```env
 SECRET_KEY=your-secret-key

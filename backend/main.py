@@ -21,8 +21,7 @@ async def lifespan(app: FastAPI):
     if not is_smtp_configured():
         logger.warning(
             "SMTP not configured — verification codes print to the server console only. "
-            "Set SMTP_USER and SMTP_PASSWORD in backend/.env (Gmail: use an App Password). "
-            "See backend/.env.example."
+            "Set SMTP_USER and SMTP_PASSWORD in backend/.env (Gmail: use an App Password)."
         )
     yield
 

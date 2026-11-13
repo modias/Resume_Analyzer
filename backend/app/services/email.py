@@ -14,7 +14,7 @@ settings = get_settings()
 CODE_LENGTH = 6
 CODE_EXPIRY_MINUTES = 15
 
-# Values copied from .env.example — treated as "not configured" so we use dev print mode
+# Placeholder example values — treated as "not configured" so we use dev print mode
 # instead of failing SMTP auth against Gmail with fake credentials.
 _PLACEHOLDER_SMTP_USERS = frozenset(
     {

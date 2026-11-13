@@ -1,16 +1,12 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion } from "framer-motion";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/cards/StatCard";
-import {
-  skillBreakdowns, type SkillBreakdown,
-  internConversionOverall, internConversionByCompany, conversionFactors,
-} from "@/lib/mock";
 import { getDashboardStats, type DashboardStats } from "@/lib/api";
-import { AlertTriangle, BookOpen, Zap, Clock, BarChart2, Layers, ChevronRight, GraduationCap, Code2, Users, Award, ArrowUpRight, FileSearch, Loader2 } from "lucide-react";
+import { AlertTriangle, FileSearch, Loader2 } from "lucide-react";
 import Link from "next/link";
 
 function CircularGauge({ value }: { value: number }) {
@@ -44,137 +40,18 @@ function CircularGauge({ value }: { value: number }) {
   );
 }
 
-const resourceTypeIcon: Record<string, React.ReactNode> = {
-  Course: <GraduationCap className="w-3.5 h-3.5 text-primary" />,
-  Docs: <BookOpen className="w-3.5 h-3.5 text-blue-400" />,
-  Project: <Code2 className="w-3.5 h-3.5 text-green-400" />,
-  Book: <BookOpen className="w-3.5 h-3.5 text-yellow-400" />,
-};
-
-const resourceTypeBadge: Record<string, string> = {
-  Course: "bg-primary/15 text-primary border-primary/20",
-  Docs: "bg-blue-500/15 text-blue-400 border-blue-500/20",
-  Project: "bg-green-500/15 text-green-400 border-green-500/20",
-  Book: "bg-yellow-500/15 text-yellow-400 border-yellow-500/20",
-};
-
-function SkillBreakdownPanel({ breakdown }: { breakdown: SkillBreakdown }) {
-  return (
-    <AnimatePresence mode="wait">
-      <motion.div
-        key={breakdown.skill}
-        initial={{ opacity: 0, x: 12 }}
-        animate={{ opacity: 1, x: 0 }}
-        exit={{ opacity: 0, x: -12 }}
-        transition={{ duration: 0.2 }}
-        className="flex flex-col gap-4 h-full"
-      >
-        {/* Header */}
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h3 className="text-base font-bold text-foreground">{breakdown.skill}</h3>
-            <p className="text-xs text-muted-foreground mt-0.5">{breakdown.category}</p>
-          </div>
-          <Badge className="shrink-0 bg-red-500/15 text-red-400 border-red-500/20 text-xs">Missing</Badge>
-        </div>
-
-        {/* Stats row */}
-        <div className="grid grid-cols-3 gap-2">
-          <div className="rounded-lg bg-muted/40 border border-border p-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <BarChart2 className="w-3 h-3 text-purple-400" />
-              <span className="text-[10px] text-muted-foreground font-medium">Demand</span>
-            </div>
-            <p className="text-lg font-bold text-foreground">{breakdown.marketDemand}%</p>
-          </div>
-          <div className="rounded-lg bg-muted/40 border border-border p-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <Zap className="w-3 h-3 text-primary" />
-              <span className="text-[10px] text-muted-foreground font-medium">Score +</span>
-            </div>
-            <p className="text-lg font-bold text-primary">+{breakdown.scoreImpact}%</p>
-          </div>
-          <div className="rounded-lg bg-muted/40 border border-border p-2.5 text-center">
-            <div className="flex items-center justify-center gap-1 mb-1">
-              <Clock className="w-3 h-3 text-green-400" />
-              <span className="text-[10px] text-muted-foreground font-medium">Learn</span>
-            </div>
-            <p className="text-lg font-bold text-foreground">{breakdown.estimatedHours}h</p>
-          </div>
-        </div>
-
-        {/* Description */}
-        <p className="text-xs text-muted-foreground leading-relaxed">{breakdown.description}</p>
-
-        {/* Roles */}
-        <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-            <Layers className="w-3 h-3" /> Roles That Require It
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {breakdown.roles.map((r) => (
-              <Badge key={r} variant="secondary" className="text-[10px] bg-muted text-muted-foreground">
-                {r}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
-        {/* Related skills */}
-        <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-            <ChevronRight className="w-3 h-3" /> Related Skills
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {breakdown.relatedSkills.map((s) => (
-              <Badge key={s} variant="outline" className="text-[10px] border-border text-muted-foreground">
-                {s}
-              </Badge>
-            ))}
-          </div>
-        </div>
-
-        {/* Resources */}
-        <div>
-          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1.5 flex items-center gap-1.5">
-            <BookOpen className="w-3 h-3" /> How to Learn
-          </p>
-          <div className="space-y-1.5">
-            {breakdown.resources.map((res) => (
-              <div key={res.label} className="flex items-center gap-2 text-xs text-muted-foreground">
-                {resourceTypeIcon[res.type]}
-                <span className="flex-1 leading-tight">{res.label}</span>
-                <Badge variant="outline" className={`text-[9px] shrink-0 border px-1.5 py-0 ${resourceTypeBadge[res.type]}`}>
-                  {res.type}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-      </motion.div>
-    </AnimatePresence>
-  );
-}
-
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loadingStats, setLoadingStats] = useState(true);
-  const [selectedGap, setSelectedGap] = useState<string>("");
 
   useEffect(() => {
     getDashboardStats()
-      .then((data) => {
-        setStats(data);
-        if (data.skill_gaps.length > 0) {
-          setSelectedGap(data.skill_gaps[0].skill);
-        }
-      })
+      .then(setStats)
       .catch(() => setStats(null))
       .finally(() => setLoadingStats(false));
   }, []);
 
   const skillGaps = stats?.skill_gaps ?? [];
-  const activeBreakdown: SkillBreakdown | undefined = skillBreakdowns[selectedGap];
 
   const scoreLabel =
     !stats || stats.match_score === 0 ? null :
@@ -272,172 +149,32 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* Skill Gaps + Breakdown side-by-side */}
+      {/* Skill Gaps */}
       {skillGaps.length > 0 && (
       <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-
-          {/* Left — Top Skill Gaps list */}
-          <Card className="border-border bg-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-yellow-400" />
-                Top Skill Gaps
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2">
-              {skillGaps.map((gap, i) => {
-                const isSelected = selectedGap === gap.skill;
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setSelectedGap(gap.skill)}
-                    className={`w-full text-left rounded-lg border px-4 py-3 transition-all duration-150 group ${
-                      isSelected
-                        ? "border-primary/40 bg-primary/10"
-                        : "border-border bg-muted/20 hover:border-primary/20 hover:bg-muted/40"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3">
-                        <Badge className="text-xs bg-red-500/15 text-red-400 border-red-500/20 shrink-0">
-                          Missing
-                        </Badge>
-                        <span className={`text-sm font-medium ${isSelected ? "text-primary" : "text-foreground"}`}>
-                          {gap.skill}
-                        </span>
-                      </div>
-                      <ChevronRight
-                        className={`w-4 h-4 shrink-0 transition-transform duration-150 ${
-                          isSelected ? "text-primary rotate-90" : "text-muted-foreground"
-                        }`}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1.5 leading-snug line-clamp-2">{gap.why}</p>
-                  </button>
-                );
-              })}
-            </CardContent>
-          </Card>
-
-          {/* Right — Breakdown panel */}
-          <Card className="border-primary/20 bg-gradient-to-b from-primary/5 to-card">
-            <CardHeader className="pb-2">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Zap className="w-4 h-4 text-primary" />
-                Breakdown
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {activeBreakdown ? (
-                <SkillBreakdownPanel breakdown={activeBreakdown} />
-              ) : (
-                <p className="text-sm text-muted-foreground">Select a skill gap to see the breakdown.</p>
-              )}
-            </CardContent>
-          </Card>
-
-        </div>
-      </motion.div>
-      )}
-
-      {/* Intern → Part-Time Conversion */}
-      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
         <Card className="border-border bg-card">
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <CardTitle className="text-base font-semibold flex items-center gap-2">
-                <Award className="w-4 h-4 text-green-400" />
-                Intern → Part-Time Conversion
-              </CardTitle>
-              <Badge className="bg-green-500/15 text-green-400 border-green-500/20 text-xs">
-                Industry data · 2024
-              </Badge>
-            </div>
-            <p className="text-xs text-muted-foreground mt-1">
-              What % of interns at top companies receive a part-time offer after their internship.
-            </p>
+          <CardHeader className="pb-2">
+            <CardTitle className="text-base font-semibold flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-yellow-400" />
+              Top Skill Gaps
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-5">
-
-            {/* Big stat + caption */}
-            <div className="flex items-center gap-6 p-4 rounded-xl bg-gradient-to-r from-green-500/10 to-emerald-500/5 border border-green-500/20">
-              <div className="text-center shrink-0">
-                <p className="text-5xl font-extrabold text-green-400">{internConversionOverall}%</p>
-                <p className="text-xs text-muted-foreground mt-1">industry avg.</p>
+          <CardContent className="space-y-2">
+            {skillGaps.map((gap) => (
+              <div key={gap.skill} className="rounded-lg border border-border bg-muted/20 px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <Badge className="text-xs bg-red-500/15 text-red-400 border-red-500/20 shrink-0">
+                    Missing
+                  </Badge>
+                  <span className="text-sm font-medium text-foreground">{gap.skill}</span>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1.5 leading-snug">{gap.why}</p>
               </div>
-              <div className="space-y-1">
-                <p className="text-sm font-medium text-foreground">More than half of interns convert to part-time.</p>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Conversion rates vary significantly by company, team, and — most importantly — how well-prepared
-                  the intern is going in. A higher match score before you start directly correlates with a better offer rate.
-                </p>
-              </div>
-            </div>
-
-            {/* Per-company bars */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                <Users className="w-3 h-3" /> By Company
-              </p>
-              <div className="space-y-2.5">
-                {internConversionByCompany.map((row, i) => (
-                  <motion.div
-                    key={row.company}
-                    initial={{ opacity: 0, x: -8 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    transition={{ delay: 0.32 + i * 0.05 }}
-                    className="flex items-center gap-3"
-                  >
-                    <span className="text-xs font-medium text-foreground w-14 shrink-0">{row.company}</span>
-                    <div className="flex-1 relative h-5 bg-muted/40 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full rounded-full"
-                        style={{
-                          background:
-                            row.rate >= 75
-                              ? "linear-gradient(90deg,#22c55e,#16a34a)"
-                              : row.rate >= 60
-                              ? "linear-gradient(90deg,#6366f1,#8b5cf6)"
-                              : "linear-gradient(90deg,#f59e0b,#d97706)",
-                        }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${row.rate}%` }}
-                        transition={{ duration: 0.7, delay: 0.34 + i * 0.05, ease: "easeOut" }}
-                      />
-                      <span className="absolute inset-0 flex items-center pl-2.5 text-[10px] font-semibold text-white/90">
-                        {row.rate}%
-                      </span>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground w-20 shrink-0 text-right">
-                      ~{row.headcount.toLocaleString()} interns/yr
-                    </span>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {/* Factors that improve conversion */}
-            <div>
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest mb-3 flex items-center gap-1.5">
-                <ArrowUpRight className="w-3 h-3" /> Factors That Increase Your Conversion Odds
-              </p>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {conversionFactors.map((f) => (
-                  <div
-                    key={f.label}
-                    className="rounded-lg border border-border bg-muted/20 p-3 flex flex-col gap-1"
-                  >
-                    <span className="text-lg font-extrabold" style={{ color: f.color }}>{f.impact}</span>
-                    <span className="text-[11px] text-muted-foreground leading-tight">{f.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
+            ))}
           </CardContent>
         </Card>
       </motion.div>
+      )}
 
       </>)}
     </div>
