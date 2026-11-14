@@ -11,7 +11,6 @@ import {
   Target,
   Brain,
   Settings,
-  TrendingUp,
   Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -97,13 +96,6 @@ export function Sidebar() {
             <p className="text-xs font-semibold text-foreground truncate">{displayName}</p>
             <p className="text-[11px] text-muted-foreground truncate">{displayEmail}</p>
           </div>
-        </div>
-        <div className="flex items-center justify-between px-2 py-2 rounded-lg bg-green-500/10 border border-green-500/20">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-3.5 h-3.5 text-green-400" />
-            <span className="text-xs text-muted-foreground">Callback Rate</span>
-          </div>
-          <span className="text-xs font-bold text-green-400">18%</span>
         </div>
       </div>
     </aside>

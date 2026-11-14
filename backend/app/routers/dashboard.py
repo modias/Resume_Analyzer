@@ -11,13 +11,6 @@ from collections import Counter
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
-_DEFAULT_SKILL_GAPS = [
-    {"skill": "AWS",     "why": "Cloud computing is required in 78% of data science internships."},
-    {"skill": "Tableau", "why": "Tableau is the most requested BI tool across Fortune 500 postings."},
-    {"skill": "Spark",   "why": "Big data processing with Spark is frequently tested in interviews."},
-    {"skill": "Docker",  "why": "Containerization signals production readiness for junior roles."},
-]
-
 
 @router.get("/stats", response_model=DashboardStats)
 async def dashboard_stats(
@@ -42,7 +35,7 @@ async def dashboard_stats(
                 StatCard(label="Quantified Impact", value=0, color="#ec4899"),
             ],
             skill_coverage=[],
-            skill_gaps=[SkillGap(**g) for g in _DEFAULT_SKILL_GAPS],
+            skill_gaps=[],
             total_analyses=0,
             callback_rate=0.0,
             job_title="",
@@ -75,8 +68,6 @@ async def dashboard_stats(
         )
         for skill, count in missing_freq.most_common(4)
     ]
-    if not skill_gaps:
-        skill_gaps = [SkillGap(**g) for g in _DEFAULT_SKILL_GAPS]
 
     callback_rate = round(min(avg_score * 0.25, 35), 1)
 

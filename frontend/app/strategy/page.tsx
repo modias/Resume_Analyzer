@@ -210,16 +210,13 @@ export default function StrategyPage() {
                       <>
                         Your match score of{" "}
                         <span className="text-green-400 font-semibold">{matchScore}%</span>{" "}
-                        already exceeds the{" "}
-                        <span className="text-foreground font-semibold">72%</span> threshold — you have a{" "}
-                        <span className="text-primary font-bold">+38%</span> higher callback probability than average.
+                        already meets the{" "}
+                        <span className="text-foreground font-semibold">72%</span> target for a strong match.
                       </>
                     ) : (
                       <>
-                        If your match score exceeds{" "}
-                        <span className="text-foreground font-semibold">72%</span>,{" "}
-                        callback probability increases by{" "}
-                        <span className="text-primary font-bold">38%</span>.{" "}
+                        Aim for a match score of at least{" "}
+                        <span className="text-foreground font-semibold">72%</span> for a strong match.{" "}
                         You are currently at{" "}
                         <span className="text-yellow-400 font-semibold">{matchScore}%</span>
                         {gap > 0 && (

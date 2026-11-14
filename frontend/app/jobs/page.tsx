@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Search, ExternalLink, TrendingUp, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
+import { Search, ExternalLink, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
 import { getJobs, getMe, hasUploadedResume, uploadResume, formatApiError, isTimeoutError, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
 
 function MatchBadge({ score }: { score: number }) {
@@ -494,16 +494,7 @@ export default function JobsPage() {
               </SheetHeader>
 
               <div className="space-y-5">
-                <div className="grid grid-cols-2 gap-3">
-                  <Card className="border-border bg-muted/30">
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-2 mb-1">
-                        <TrendingUp className="w-3.5 h-3.5 text-purple-400" />
-                        <span className="text-xs text-muted-foreground">Market Freq.</span>
-                      </div>
-                      <p className="text-lg font-bold text-foreground">{selected.market_frequency}%</p>
-                    </CardContent>
-                  </Card>
+                <div>
                   <Card className="border-border bg-muted/30">
                     <CardContent className="p-3">
                       <div className="flex items-center gap-2 mb-1">
