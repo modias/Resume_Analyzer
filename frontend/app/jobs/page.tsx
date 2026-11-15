@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Search, ExternalLink, Banknote, BarChart2, Star, Loader2, MapPin, Building2, Calendar, Lock, FileText, Wifi, ChevronLeft, ChevronRight, CheckCircle2, AlertCircle } from "lucide-react";
 import { getJobs, getMe, hasUploadedResume, uploadResume, formatApiError, isTimeoutError, type Job, type EmploymentType, type DatePosted } from "@/lib/api";
+import { GLOBAL_SEARCH_EVENT } from "@/components/shell/Header";
 
 function MatchBadge({ score }: { score: number }) {
   const color =
@@ -94,13 +95,15 @@ export default function JobsPage() {
 
   // On mount: only load jobs if user already uploaded a resume.
   useEffect(() => {
+    const initialSearch = new URLSearchParams(window.location.search).get("q") ?? search;
+    if (initialSearch !== search) setSearch(initialSearch);
     hasUploadedResume().then((uploaded) => {
       setHasResume(uploaded);
       if (!uploaded) {
         setLoading(false);
         return;
       }
-      fetchJobs({ search, location, employmentType, datePosted, remoteOnly, page });
+      fetchJobs({ search: initialSearch, location, employmentType, datePosted, remoteOnly, page });
       getMe().then((u) => setDreamCompanies(u.dream_companies ?? [])).catch(() => {});
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -120,6 +123,17 @@ export default function JobsPage() {
   };
 
   const handleSearchChange = (v: string) => { setSearch(v); triggerSearch({ search: v, page: 1 }); };
+
+  useEffect(() => {
+    const onGlobalSearch = (e: Event) => {
+      const q = (e as CustomEvent<string>).detail;
+      setSearch(q);
+      setPage(1);
+      if (hasResume) fetchJobs({ search: q, location, employmentType, datePosted, remoteOnly, page: 1 });
+    };
+    window.addEventListener(GLOBAL_SEARCH_EVENT, onGlobalSearch);
+    return () => window.removeEventListener(GLOBAL_SEARCH_EVENT, onGlobalSearch);
+  }, [hasResume, location, employmentType, datePosted, remoteOnly, fetchJobs]);
   const handleLocationChange = (v: string) => { setLocation(v); triggerSearch({ location: v, page: 1 }); };
 
   const handleTypeChange = (v: EmploymentType) => {

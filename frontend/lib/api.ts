@@ -345,6 +345,25 @@ export async function fetchSuggestions(analysisId: number): Promise<SuggestionsR
   });
 }
 
+export interface AnalysisHistoryItem {
+  id: number;
+  resume_filename: string;
+  job_title: string;
+  company: string;
+  match_score: number;
+  required_coverage: number;
+  preferred_coverage: number;
+  quantified_impact: number;
+  extracted_skills: string[];
+  missing_skills: string[];
+  suggestions: OptimizationSuggestion[];
+  created_at: string;
+}
+
+export async function getAnalysisHistory(): Promise<AnalysisHistoryItem[]> {
+  return apiFetch<AnalysisHistoryItem[]>("/resume/history");
+}
+
 export interface StructuredResumePayload {
   name: string;
   contact: string;

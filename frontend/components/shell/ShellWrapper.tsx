@@ -46,7 +46,7 @@ export function ShellWrapper({ children }: { children: React.ReactNode }) {
     <>
       <Sidebar />
       <Header />
-      <main className="ml-[260px] pt-14 min-h-screen bg-background">
+      <main className="ml-[260px] pt-16 min-h-screen bg-background">
         <div className="max-w-7xl mx-auto px-6 py-8">
           {children}
         </div>
