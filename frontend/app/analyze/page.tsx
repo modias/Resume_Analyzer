@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
+import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,7 @@ import {
   BarChart3,
   Layers,
   Eye,
+  GraduationCap,
 } from "lucide-react";
 import {
   analyzeResume,
@@ -406,6 +408,7 @@ export default function AnalyzePage() {
   };
 
   const missingSkills = result ? result.required_skills.filter((s) => !s.present) : [];
+  const missingPreferred = result?.missing_preferred_skills ?? [];
   const takeaways = result ? buildTakeaways(result) : [];
 
   return (
@@ -732,25 +735,52 @@ export default function AnalyzePage() {
             Missing Skills
             {result && (
               <Badge variant="secondary" className="text-[10px] bg-red-500/10 text-red-400 border-red-500/20">
-                {missingSkills.length}
+                {missingSkills.length + missingPreferred.length}
               </Badge>
             )}
           </p>
           {!result ? (
             <p className="text-sm text-muted-foreground">Required skills you&apos;re missing will appear here.</p>
-          ) : missingSkills.length === 0 ? (
+          ) : missingSkills.length + missingPreferred.length === 0 ? (
             <div className="flex items-center gap-2 text-sm text-green-400">
               <CheckCircle2 className="w-4 h-4 shrink-0" />
               No missing skills — great match!
             </div>
           ) : (
-            <div className="flex flex-wrap gap-2">
-              {missingSkills.map((s) => (
-                <Badge key={s.skill} variant="outline" className="border-red-500/40 text-red-400 bg-red-500/10 text-xs font-normal">
-                  {s.skill}
-                </Badge>
-              ))}
-            </div>
+            <>
+              <div className="flex flex-wrap gap-2">
+                {missingSkills.map((s) => (
+                  <Link key={s.skill} href={`/improve-skills?skill=${encodeURIComponent(s.skill)}`} title={`Learn ${s.skill}`}>
+                    <Badge
+                      variant="outline"
+                      className="border-red-500/40 text-red-400 bg-red-500/10 text-xs font-normal hover:bg-red-500/20 cursor-pointer"
+                    >
+                      {s.skill}
+                    </Badge>
+                  </Link>
+                ))}
+                {missingPreferred.map((skill) => (
+                  <Link key={skill} href={`/improve-skills?skill=${encodeURIComponent(skill)}`} title={`Learn ${skill} (preferred)`}>
+                    <Badge
+                      variant="outline"
+                      className="border-amber-500/40 text-amber-400 bg-amber-500/10 text-xs font-normal hover:bg-amber-500/20 cursor-pointer"
+                    >
+                      {skill}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+              <Link
+                href="/improve-skills"
+                className="mt-4 inline-flex items-center gap-1.5 text-xs text-primary hover:underline"
+              >
+                <GraduationCap className="w-3.5 h-3.5" />
+                {result.added_to_learning?.length
+                  ? `Added ${result.added_to_learning.length} to your learning plans`
+                  : "In your learning plans"}
+                <ArrowRight className="w-3 h-3" />
+              </Link>
+            </>
           )}
         </div>
 

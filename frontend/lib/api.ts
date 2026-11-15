@@ -302,6 +302,8 @@ export interface AnalyzeResponse {
   missing_skills: string[];
   suggestions: OptimizationSuggestion[];
   resume_text: string;
+  missing_preferred_skills?: string[];
+  added_to_learning?: string[];
 }
 
 export interface SuggestionsResponse {
@@ -362,6 +364,126 @@ export interface AnalysisHistoryItem {
 
 export async function getAnalysisHistory(): Promise<AnalysisHistoryItem[]> {
   return apiFetch<AnalysisHistoryItem[]>("/resume/history");
+}
+
+// ─── Learning (Improve Skills) ────────────────────────────────────────────────
+
+/** AI roadmap/notes generation; generous to cover Render cold starts. */
+const LEARNING_AI_TIMEOUT_MS = 60_000;
+
+export interface RecommendedSkill {
+  skill: string;
+  priority: "High" | "Medium";
+  progress: number;
+  plan_id: number | null;
+}
+
+export interface LearningPlanSummary {
+  id: number;
+  skill: string;
+  progress: number;
+  completed_lessons: number;
+  total_lessons: number;
+  source: "custom" | "analysis";
+  priority: "" | "High" | "Medium";
+}
+
+export interface LearningOverview {
+  target_role: string;
+  has_analysis: boolean;
+  readiness: number | null;
+  covered: number;
+  total: number;
+  in_progress: number;
+  to_learn: number;
+  recommended: RecommendedSkill[];
+  plans: LearningPlanSummary[];
+}
+
+export interface LearningLesson {
+  id: number;
+  position: number;
+  title: string;
+  description: string;
+  duration: string;
+  completed: boolean;
+  has_notes: boolean;
+}
+
+export type LearningLevel = "" | "beginner" | "intermediate" | "advanced";
+
+export interface LearningPlan {
+  id: number;
+  skill: string;
+  summary: string;
+  level: LearningLevel;
+  goal: string;
+  progress: number;
+  lessons: LearningLesson[];
+}
+
+export interface LessonNotes {
+  overview: string;
+  sections: {
+    heading: string;
+    body: string;
+    bullets: string[];
+    code: { language: string; snippet: string } | null;
+  }[];
+  key_takeaways: string[];
+  common_mistakes: string[];
+  practice_task: string;
+  quiz: {
+    question: string;
+    options: string[];
+    answer_index: number;
+    explanation: string;
+  }[];
+}
+
+export interface LearningLessonDetail extends LearningLesson {
+  plan_id: number;
+  skill: string;
+  notes: LessonNotes;
+}
+
+export async function getLearningOverview(): Promise<LearningOverview> {
+  return apiFetch<LearningOverview>("/learn/overview", { timeoutMs: HEALTH_TIMEOUT_MS });
+}
+
+export async function createLearningPlan(
+  skill: string,
+  options: { level?: LearningLevel; goal?: string } = {}
+): Promise<LearningPlan> {
+  return apiFetch<LearningPlan>("/learn/plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ skill, level: options.level ?? "", goal: options.goal ?? "" }),
+    timeoutMs: LEARNING_AI_TIMEOUT_MS,
+  });
+}
+
+export async function getLearningPlan(planId: number): Promise<LearningPlan> {
+  // Plans added from an analysis have no roadmap yet; the first fetch generates it.
+  return apiFetch<LearningPlan>(`/learn/plan/${planId}`, { timeoutMs: LEARNING_AI_TIMEOUT_MS });
+}
+
+export async function deleteLearningPlan(planId: number): Promise<void> {
+  return apiFetch<void>(`/learn/plan/${planId}`, { method: "DELETE" });
+}
+
+export async function getLearningLesson(lessonId: number): Promise<LearningLessonDetail> {
+  return apiFetch<LearningLessonDetail>(`/learn/lesson/${lessonId}`, {
+    timeoutMs: LEARNING_AI_TIMEOUT_MS,
+  });
+}
+
+export async function setLessonCompleted(lessonId: number, completed: boolean): Promise<LearningPlan> {
+  return apiFetch<LearningPlan>(`/learn/lesson/${lessonId}/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ completed }),
+  });
 }
 
 export interface StructuredResumePayload {

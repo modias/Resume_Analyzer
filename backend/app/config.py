@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     gemini_api_key: str = ""
     groq_api_key: str = ""
+    groq_model: str = "openai/gpt-oss-120b"
     rapidapi_key: str = ""
 
     # Google OAuth

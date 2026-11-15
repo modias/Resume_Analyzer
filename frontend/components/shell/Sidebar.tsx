@@ -9,7 +9,7 @@ import {
   FileText,
   BriefcaseBusiness,
   CircleDot,
-  Brain,
+  ChartColumn,
   Settings,
   Sparkle,
   ChevronDown,
@@ -22,7 +22,7 @@ const navItems = [
   { label: "Analyze Resume", href: "/analyze", icon: FileText },
   { label: "Job Insights", href: "/jobs", icon: BriefcaseBusiness },
   { label: "Application Strategy", href: "/strategy", icon: CircleDot },
-  { label: "Improve Skills", href: "/improve-skills", icon: Brain },
+  { label: "Improve Skills", href: "/improve-skills", icon: ChartColumn },
   { label: "Settings", href: "/settings", icon: Settings },
 ];
 

@@ -241,12 +241,15 @@ def _get_fallback_questions(
 
 def _groq_chat_sync(api_key: str, model: str, messages: list, temperature: float, max_tokens: int) -> str:
     """Direct urllib call to Groq — bypasses httpx/proxy issues."""
-    payload = json.dumps({
+    body = {
         "model": model,
         "messages": messages,
         "temperature": temperature,
         "max_tokens": max_tokens,
-    }).encode()
+    }
+    if model.startswith("openai/gpt-oss"):
+        body["reasoning_effort"] = "low"
+    payload = json.dumps(body).encode()
     # Bypass system proxy — use direct connection
     proxy_handler = urllib.request.ProxyHandler({})
     opener = urllib.request.build_opener(proxy_handler)
@@ -721,7 +724,7 @@ async def generate_questions(req: QuestionRequest):
         content = await asyncio.to_thread(
             _groq_chat_sync,
             settings.groq_api_key,
-            "llama-3.3-70b-versatile",
+            settings.groq_model,
             [
                 {"role": "system", "content": _build_system_prompt(count)},
                 {"role": "user", "content": prompt},
@@ -905,7 +908,7 @@ async def check_answer(req: CheckAnswerRequest):
             content = await asyncio.to_thread(
                 _groq_chat_sync,
                 settings.groq_api_key,
-                "llama-3.3-70b-versatile",
+                settings.groq_model,
                 [
                     {"role": "system", "content": _CHECK_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},

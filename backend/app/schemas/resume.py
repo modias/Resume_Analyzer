@@ -25,6 +25,9 @@ class AnalyzeResponse(BaseModel):
     missing_skills: list[str]
     suggestions: list[OptimizationSuggestion]
     resume_text: str
+    missing_preferred_skills: list[str] = []
+    # Missing skills newly added to the user's learning plans by this analysis.
+    added_to_learning: list[str] = []
 
 
 class SuggestionsResponse(BaseModel):

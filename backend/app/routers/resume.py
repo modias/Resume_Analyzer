@@ -19,7 +19,8 @@ from app.schemas.resume import (
 from app.services.auth import get_optional_user as get_current_user
 from app.services.pdf_parser import extract_text_from_pdf
 from app.services.pdf_export import structured_resume_to_pdf_bytes
-from app.services.match_scorer import compute_match
+from app.services.match_scorer import _split_required_preferred, compute_match
+from app.services.learning_queue import queue_missing_skills
 from app.services.ai_suggester import (
     generate_suggestions_sync,
     summarize_job_description_sync,
@@ -77,6 +78,14 @@ async def analyze_resume(
     score_data = compute_match(resume_text, job_description)
     _merge_user_skills(current_user, score_data["extracted_skills"])
 
+    required_names = {s["skill"] for s in score_data["required_skills"]}
+    resume_set = set(score_data["extracted_skills"])
+    _, preferred = _split_required_preferred(job_description, score_data["jd_skills"])
+    missing_preferred = [s for s in preferred if s not in resume_set and s not in required_names]
+    added_to_learning = await queue_missing_skills(
+        db, current_user.id, score_data["missing_skills"], missing_preferred
+    )
+
     analysis = Analysis(
         user_id=current_user.id,
         resume_filename=resume.filename or "resume.pdf",
@@ -109,6 +118,8 @@ async def analyze_resume(
         missing_skills=score_data["missing_skills"],
         suggestions=[],
         resume_text=resume_text,
+        missing_preferred_skills=missing_preferred,
+        added_to_learning=added_to_learning,
     )
 
 

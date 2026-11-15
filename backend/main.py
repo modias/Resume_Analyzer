@@ -4,10 +4,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import get_settings
 from app.database import init_db
-from app.routers import auth, resume, jobs, dashboard, interview, applications
+from app.routers import auth, resume, jobs, dashboard, interview, applications, learning
 from app.models import analysis, user, practice  # noqa: F401 — ensure tables are registered
 from app.models import log  # noqa: F401
 from app.models import application  # noqa: F401
+from app.models import learning as learning_models  # noqa: F401
 from app.services.email import is_smtp_configured
 
 logger = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ app.include_router(jobs.router)
 app.include_router(dashboard.router)
 app.include_router(interview.router)
 app.include_router(applications.router)
+app.include_router(learning.router)
 
 
 @app.get("/health", tags=["meta"])

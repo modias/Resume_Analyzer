@@ -142,17 +142,33 @@ Return ONLY the JSON array, no markdown, no other text.
 """.strip()
 
 
-def _groq_chat(messages: list[dict], *, temperature: float, max_tokens: int) -> str:
+def _groq_chat(
+    messages: list[dict],
+    *,
+    temperature: float,
+    max_tokens: int,
+    json_mode: bool = False,
+    json_schema: dict | None = None,
+) -> str:
     import httpx
     from groq import Groq
 
+    extra: dict = {}
+    if json_schema:
+        extra["response_format"] = {"type": "json_schema", "json_schema": json_schema}
+    elif json_mode:
+        extra["response_format"] = {"type": "json_object"}
+    if settings.groq_model.startswith("openai/gpt-oss"):
+        # Reasoning tokens count against max_tokens; keep them small.
+        extra["extra_body"] = {"reasoning_effort": "low"}
     with httpx.Client(trust_env=False) as http_client:
         client = Groq(api_key=settings.groq_api_key, http_client=http_client)
         response = client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model=settings.groq_model,
             messages=messages,
             temperature=temperature,
             max_tokens=max_tokens,
+            **extra,
         )
     return response.choices[0].message.content or ""
 

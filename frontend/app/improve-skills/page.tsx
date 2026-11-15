@@ -1,886 +1,607 @@
 "use client";
 
-import { useState, useRef, useEffect, useCallback } from "react";
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
-import { motion, AnimatePresence } from "framer-motion";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { Input } from "@/components/ui/input";
+import { useCallback, useEffect, useRef, useState } from "react";
+import Link from "next/link";
+import { motion } from "framer-motion";
 import {
-  Brain,
-  Sparkles,
-  ChevronDown,
-  Lightbulb,
-  AlertCircle,
-  Code2,
-  Layers,
-  Cpu,
-  Bug,
+  ArrowRight,
   BookOpen,
-  Wrench,
-  CheckCircle2,
-  XCircle,
-  SendHorizonal,
-  Star,
-  Volume2,
-  VolumeX,
+  Check,
+  GraduationCap,
+  Layers,
   Loader2,
-  TrendingUp,
-  Play,
-  Terminal,
+  Sparkles,
+  Trash2,
 } from "lucide-react";
-import { saveSkillSession, getSkillProgress, type PracticeProgressResponse } from "@/lib/api";
-import { speakText, buildSkillFeedbackText } from "@/lib/elevenlabs";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
+import {
+  createLearningPlan,
+  deleteLearningPlan,
+  formatApiError,
+  getLearningOverview,
+  getLearningPlan,
+  type LearningLevel,
+  type LearningOverview,
+  type LearningPlan,
+} from "@/lib/api";
+import { LessonViewer } from "@/components/skills/LessonViewer";
+import { PracticeTool } from "@/components/skills/PracticeTool";
 
-const DIFFICULTIES = [
-  { value: "easy", label: "Easy", color: "text-green-400", bg: "bg-green-500/10 border-green-500/20" },
-  { value: "medium", label: "Medium", color: "text-yellow-400", bg: "bg-yellow-500/10 border-yellow-500/20" },
-  { value: "hard", label: "Hard", color: "text-orange-400", bg: "bg-orange-500/10 border-orange-500/20" },
-  { value: "god", label: "God Level", color: "text-red-400", bg: "bg-red-500/10 border-red-500/20" },
+const panel = "rounded-2xl border border-border bg-card/60";
+
+const LEVELS: { value: LearningLevel; label: string }[] = [
+  { value: "beginner", label: "Beginner" },
+  { value: "intermediate", label: "Intermediate" },
+  { value: "advanced", label: "Advanced" },
 ];
 
+const POPULAR_TOPICS = ["Python", "SQL", "Docker", "AWS", "System Design", "Git", "React", "Machine Learning"];
 
-/** Skill level rows for coverage breakdown bars (Easy → God). */
-const SKILL_LEVEL_BARS = [
-  { key: "easy", label: "Easy", bar: "bg-green-500", text: "text-green-400" },
-  { key: "medium", label: "Medium", bar: "bg-yellow-400", text: "text-yellow-400" },
-  { key: "hard", label: "Hard", bar: "bg-orange-500", text: "text-orange-400" },
-  { key: "god", label: "God Level", bar: "bg-red-500", text: "text-red-400" },
-] as const;
-
-type LevelKey = (typeof SKILL_LEVEL_BARS)[number]["key"];
-
-const CATEGORY_ICONS: Record<string, React.ElementType> = {
-  Fundamentals: BookOpen,
-  "Data Structures": Layers,
-  Algorithms: Cpu,
-  "System Design": Wrench,
-  Debugging: Bug,
-  "Best Practices": Code2,
-};
-
-interface Question {
-  question: string;
-  hint: string;
-  category: string;
-  ideal_answer?: string;
-  test_harness?: string;
-}
-
-interface AnswerResult {
-  correct: boolean;
-  score: number;
-  feedback: string;
-  ideal_answer: string;
-}
-
-interface RunCodeOutput {
-  stdout: string;
-  stderr: string;
-  exit_code: number;
-}
-
-const NON_RUNNABLE_LANGUAGES = new Set([
-  "sql", "html", "css", "graphql", "solidity", "vyper", "move", "coq", "agda", "idris", "lean",
-]);
-
-export default function ImproveSkillsPage() {
-  const [language, setLanguage] = useState("");
-  const [difficulty, setDifficulty] = useState("medium");
-  const [focusTopic, setFocusTopic] = useState("");
-  const [questionCount, setQuestionCount] = useState(5);
-  const [open, setOpen] = useState(false);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [revealed, setRevealed] = useState<Set<number>>(new Set());
-  const [answers, setAnswers] = useState<Record<number, string>>({});
-  const [checking, setChecking] = useState<Set<number>>(new Set());
-  const [results, setResults] = useState<Record<number, AnswerResult>>({});
-  const [runOutputs, setRunOutputs] = useState<Record<number, RunCodeOutput>>({});
-  const [runningCode, setRunningCode] = useState<Set<number>>(new Set());
-  const [speaking, setSpeaking] = useState<number | null>(null);
-  const [loadingAudio, setLoadingAudio] = useState<Set<number>>(new Set());
-  const [practiceProgress, setPracticeProgress] = useState<PracticeProgressResponse | null>(null);
-  const [selectedLanguageKey, setSelectedLanguageKey] = useState<string | null>(null);
-  const currentAudio = useRef<HTMLAudioElement | null>(null);
-  const progressSavedForBatch = useRef(false);
-
-  const selected = DIFFICULTIES.find((d) => d.value === difficulty)!;
-
-  useEffect(() => {
-    getSkillProgress().then(setPracticeProgress).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (!practiceProgress?.languages?.length) return;
-    if (
-      !selectedLanguageKey ||
-      !practiceProgress.languages.some((l) => l.language_key === selectedLanguageKey)
-    ) {
-      setSelectedLanguageKey(practiceProgress.languages[0].language_key);
-    }
-  }, [practiceProgress, selectedLanguageKey]);
-
-  const refreshProgress = useCallback(() => {
-    getSkillProgress().then(setPracticeProgress).catch(() => {});
-  }, []);
-
-  useEffect(() => {
-    if (questions.length === 0) return;
-    const allDone = questions.every((_, i) => results[i] != null);
-    if (!allDone || progressSavedForBatch.current) return;
-    progressSavedForBatch.current = true;
-    const payload = questions.map((_, i) => ({
-      score: results[i].score,
-      difficulty,
-    }));
-    saveSkillSession(language.trim(), difficulty, payload)
-      .then(refreshProgress)
-      .catch(() => {
-        progressSavedForBatch.current = false;
-      });
-  }, [questions, results, difficulty, language, refreshProgress]);
-
-  const handleGenerate = async () => {
-    if (!language.trim()) {
-      setError("Please enter a programming language.");
-      return;
-    }
-    setError(null);
-    setLoading(true);
-    setQuestions([]);
-    setRevealed(new Set());
-    setAnswers({});
-    setResults({});
-    setRunOutputs({});
-    progressSavedForBatch.current = false;
-
-    try {
-      const res = await fetch(`${API_BASE}/interview/questions`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          language: language.trim(),
-          difficulty,
-          count: questionCount,
-          topic: focusTopic.trim() ? "custom" : "any",
-          custom_topic: focusTopic.trim(),
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail ?? `Request failed (${res.status})`);
-      }
-
-      const data: Question[] = await res.json();
-      setQuestions(data);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to generate questions.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const toggleHint = (i: number) => {
-    setRevealed((prev) => {
-      const next = new Set(prev);
-      if (next.has(i)) next.delete(i); else next.add(i);
-      return next;
-    });
-  };
-
-  const activeLanguage =
-    practiceProgress?.languages.find((l) => l.language_key === selectedLanguageKey) ?? null;
-
-  const canRunCode = !NON_RUNNABLE_LANGUAGES.has(language.trim().toLowerCase());
-
-  const handleRunCode = async (i: number) => {
-    const code = answers[i] ?? "";
-    if (!code.trim() || !canRunCode) return;
-
-    setRunningCode((prev) => new Set(prev).add(i));
-    try {
-      const res = await fetch(`${API_BASE}/interview/run-code`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code.trim(),
-          language: language.trim(),
-          test_harness: questions[i].test_harness ?? "",
-          ideal_answer: questions[i].ideal_answer ?? "",
-          question: questions[i].question,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail ?? `Request failed (${res.status})`);
-      }
-
-      const output: RunCodeOutput = await res.json();
-      setRunOutputs((prev) => ({ ...prev, [i]: output }));
-    } catch (err) {
-      setRunOutputs((prev) => ({
-        ...prev,
-        [i]: {
-          stdout: "",
-          stderr: err instanceof Error ? err.message : "Failed to run code.",
-          exit_code: 1,
-        },
-      }));
-    } finally {
-      setRunningCode((prev) => {
-        const next = new Set(prev);
-        next.delete(i);
-        return next;
-      });
-    }
-  };
-
-  const handleCheckAnswer = async (i: number) => {
-    const answer = answers[i] ?? "";
-    if (!answer.trim()) return;
-
-    setChecking((prev) => new Set(prev).add(i));
-    try {
-      const res = await fetch(`${API_BASE}/interview/check-answer`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          question: questions[i].question,
-          answer: answer.trim(),
-          language: language.trim(),
-          hint: questions[i].hint,
-          ideal_answer: questions[i].ideal_answer ?? "",
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.detail ?? `Request failed (${res.status})`);
-      }
-
-      const result: AnswerResult = await res.json();
-      setResults((prev) => ({ ...prev, [i]: result }));
-    } catch (err) {
-      setResults((prev) => ({
-        ...prev,
-        [i]: {
-          correct: false,
-          score: 0,
-          feedback: err instanceof Error ? err.message : "Failed to evaluate answer.",
-          ideal_answer: "",
-        },
-      }));
-    } finally {
-      setChecking((prev) => {
-        const next = new Set(prev);
-        next.delete(i);
-        return next;
-      });
-    }
-  };
-
-  const handleSpeak = async (i: number) => {
-    const result = results[i];
-    if (!result) return;
-
-    // Stop current audio if speaking this same question
-    if (speaking === i) {
-      currentAudio.current?.pause();
-      currentAudio.current = null;
-      setSpeaking(null);
-      return;
-    }
-
-    // Stop any other audio that's playing
-    if (currentAudio.current) {
-      currentAudio.current.pause();
-      currentAudio.current = null;
-    }
-    setSpeaking(null);
-
-    setLoadingAudio((prev) => new Set(prev).add(i));
-    try {
-      const text = buildSkillFeedbackText(
-        questions[i].question,
-        result.correct,
-        result.score,
-        result.feedback,
-        result.ideal_answer
-      );
-      const audio = await speakText(text);
-      currentAudio.current = audio;
-      setSpeaking(i);
-      audio.onended = () => {
-        setSpeaking(null);
-        currentAudio.current = null;
-        URL.revokeObjectURL(audio.src);
-      };
-    } catch {
-      // silently fail — no key or network error
-    } finally {
-      setLoadingAudio((prev) => {
-        const next = new Set(prev);
-        next.delete(i);
-        return next;
-      });
-    }
-  };
+function ReadinessRing({ value }: { value: number | null }) {
+  const size = 96;
+  const stroke = 10;
+  const radius = (size - stroke) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const pct = Math.max(0, Math.min(100, value ?? 0));
 
   return (
-    <div className="space-y-6 max-w-3xl mx-auto">
-      {/* Header */}
-      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }}>
-        <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-          <Brain className="w-6 h-6 text-primary" />
-          Improve Skills
-        </h1>
-        <p className="text-muted-foreground text-sm mt-1">
-          Generate interview questions, write your answer, and get instant AI feedback.
-        </p>
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} className="-rotate-90">
+        <defs>
+          <linearGradient id="readiness-ring" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor="#c084fc" />
+            <stop offset="100%" stopColor="#7c3aed" />
+          </linearGradient>
+        </defs>
+        <circle cx={size / 2} cy={size / 2} r={radius} fill="none" stroke="hsl(var(--muted))" strokeWidth={stroke} />
+        <motion.circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="url(#readiness-ring)"
+          strokeWidth={stroke}
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          initial={{ strokeDashoffset: circumference }}
+          animate={{ strokeDashoffset: circumference * (1 - pct / 100) }}
+          transition={{ duration: 0.9, ease: "easeOut" }}
+        />
+      </svg>
+      <span className="absolute inset-0 flex items-center justify-center text-xl font-bold text-foreground">
+        {value == null ? "—" : `${Math.round(value)}%`}
+      </span>
+    </div>
+  );
+}
+
+function ProgressBar({ value }: { value: number }) {
+  return (
+    <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+      <motion.div
+        className="h-full rounded-full bg-gradient-to-r from-violet-600 to-purple-400"
+        initial={{ width: 0 }}
+        animate={{ width: `${value}%` }}
+        transition={{ duration: 0.6 }}
+      />
+    </div>
+  );
+}
+
+export default function ImproveSkillsPage() {
+  const [tab, setTab] = useState<"learn" | "practice">("learn");
+  const [overview, setOverview] = useState<LearningOverview | null>(null);
+  const [overviewError, setOverviewError] = useState<string | null>(null);
+  const [plan, setPlan] = useState<LearningPlan | null>(null);
+  const [pendingSkill, setPendingSkill] = useState<string | null>(null);
+  const [planError, setPlanError] = useState<string | null>(null);
+  const [openLessonId, setOpenLessonId] = useState<number | null>(null);
+
+  const [topic, setTopic] = useState("");
+  const [level, setLevel] = useState<LearningLevel>("");
+  const [goal, setGoal] = useState("");
+  const [formNotice, setFormNotice] = useState<string | null>(null);
+  const roadmapRef = useRef<HTMLDivElement>(null);
+
+  const refreshOverview = useCallback(async () => {
+    try {
+      const data = await getLearningOverview();
+      setOverview(data);
+      setOverviewError(null);
+      return data;
+    } catch (err) {
+      setOverviewError(formatApiError(err, "Could not load your skills."));
+      return null;
+    }
+  }, []);
+
+  const findPlan = (skill: string, plans = overview?.plans) =>
+    plans?.find((p) => p.skill.toLowerCase() === skill.trim().toLowerCase()) ?? null;
+
+  const showRoadmap = () =>
+    setTimeout(() => roadmapRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" }), 50);
+
+  const openPlan = useCallback(
+    async (skill: string, planId: number, needsRoadmap = false) => {
+      setPlanError(null);
+      setPendingSkill(skill);
+      showRoadmap();
+      try {
+        setPlan(await getLearningPlan(planId));
+        if (needsRoadmap) refreshOverview();
+      } catch (err) {
+        setPlanError(formatApiError(err, "Could not load this roadmap."));
+      } finally {
+        setPendingSkill(null);
+      }
+    },
+    [refreshOverview]
+  );
+
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("skill");
+    refreshOverview().then((data) => {
+      if (!data) return;
+      const target = requested ? findPlan(requested, data.plans) : null;
+      if (target) {
+        openPlan(target.skill, target.id, target.total_lessons === 0);
+        return;
+      }
+      if (requested) setTopic(requested);
+      // Don't auto-generate a roadmap on page load; only open plans that already have one.
+      const firstStarted = data.plans.find((p) => p.total_lessons > 0);
+      if (firstStarted) getLearningPlan(firstStarted.id).then(setPlan).catch(() => {});
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshOverview, openPlan]);
+
+  const createPlan = async (skill: string) => {
+    setPlanError(null);
+    setPendingSkill(skill);
+    showRoadmap();
+    try {
+      setPlan(await createLearningPlan(skill, { level, goal: goal.trim() }));
+      setTopic("");
+      setGoal("");
+      refreshOverview();
+    } catch (err) {
+      setPlanError(formatApiError(err, "Could not create a plan. Try again."));
+    } finally {
+      setPendingSkill(null);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const skill = topic.trim();
+    if (!skill || pendingSkill) return;
+    const existing = findPlan(skill);
+    if (existing && existing.total_lessons > 0) {
+      setFormNotice(`You already have a ${skill} plan, so it's open below. Delete it to make a new one.`);
+      if (plan?.id === existing.id) showRoadmap();
+      else openPlan(existing.skill, existing.id);
+      return;
+    }
+    setFormNotice(null);
+    createPlan(skill);
+  };
+
+  const handlePlanUpdated = (updated: LearningPlan) => {
+    setPlan(updated);
+    refreshOverview();
+  };
+
+  const handleDeletePlan = async () => {
+    if (!plan || !window.confirm(`Delete your ${plan.skill} plan and its notes?`)) return;
+    try {
+      await deleteLearningPlan(plan.id);
+      setPlan(null);
+      const data = await refreshOverview();
+      const nextId = data?.plans.find((p) => p.total_lessons > 0)?.id;
+      if (nextId) setPlan(await getLearningPlan(nextId));
+    } catch (err) {
+      setPlanError(formatApiError(err, "Could not delete this plan."));
+    }
+  };
+
+  const plans = overview?.plans ?? [];
+  const recommendedChips = (overview?.recommended ?? []).filter((r) => !r.plan_id).slice(0, 8);
+  const planKeys = new Set(plans.map((p) => p.skill.toLowerCase()));
+  const popularChips = POPULAR_TOPICS.filter((t) => !planKeys.has(t.toLowerCase())).slice(0, 6);
+
+  return (
+    <div className="space-y-5">
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4"
+      >
+        <div className="min-w-0">
+          <h1 className="text-3xl font-bold text-foreground tracking-tight">Improve Skills</h1>
+          <p className="text-muted-foreground text-sm mt-1">
+            Tell us what you want to learn and get a personalized plan with AI-written lessons.
+          </p>
+        </div>
+        <div className="flex shrink-0 rounded-xl border border-border bg-card/60 p-1">
+          {(["learn", "practice"] as const).map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setTab(t)}
+              className={cn(
+                "px-4 py-1.5 rounded-lg text-sm font-medium transition-colors",
+                tab === t ? "bg-accent text-foreground" : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {t === "learn" ? "Learn" : "Practice"}
+            </button>
+          ))}
+        </div>
       </motion.div>
 
-      {/* Skill coverage by difficulty level */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.04 }}>
-        <Card className="border-border bg-card">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" />
-              Skill Coverage Breakdown
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Practice mix by difficulty — Easy (green), Medium (yellow), Hard (orange), God Level (red)
+      {tab === "practice" ? (
+        <PracticeTool />
+      ) : (
+        <>
+          {overviewError && (
+            <div className="rounded-xl border border-amber-500/20 bg-amber-500/10 p-3 text-sm text-amber-400">
+              {overviewError}
+            </div>
+          )}
+
+          {/* What do you want to learn? */}
+          <motion.form
+            onSubmit={handleSubmit}
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.05 }}
+            className={cn(panel, "p-6 bg-gradient-to-br from-primary/10 via-card/60 to-card/60")}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <GraduationCap className="w-5 h-5 text-primary" />
+              <p className="text-lg font-semibold text-foreground">What do you want to learn?</p>
+            </div>
+            <p className="text-sm text-muted-foreground mb-4">
+              Enter any skill or topic. The AI builds a step-by-step plan and writes notes for every lesson.
             </p>
-          </CardHeader>
-          <CardContent className="pt-0 space-y-5">
-            {!practiceProgress || practiceProgress.overall.total_attempts === 0 ? (
-              <div className="flex flex-col items-center justify-center py-8 gap-2 text-center">
-                <p className="text-sm text-muted-foreground">No practice sessions yet.</p>
-                <p className="text-xs text-muted-foreground">Generate questions below to record your first session.</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                    Sessions per level
-                  </p>
-                </div>
-                <div className="pt-3 border-t border-border space-y-2">
-                  <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-                    Languages practiced
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {practiceProgress.languages.map((l) => {
-                      const countsByLevel: Record<LevelKey, number> = {
-                        easy: l.easy.count,
-                        medium: l.medium.count,
-                        hard: l.hard.count,
-                        god: l.god.count,
-                      };
 
-                      const dominantKey = (["easy", "medium", "hard", "god"] as LevelKey[]).reduce(
-                        (best, k) => (countsByLevel[k] > countsByLevel[best] ? k : best),
-                        "medium" as LevelKey
-                      );
-
-                      const row = SKILL_LEVEL_BARS.find((r) => r.key === dominantKey) ?? SKILL_LEVEL_BARS[1];
-                      const isSelected = l.language_key === selectedLanguageKey;
-
-                      return (
-                        <button
-                          key={l.language_key}
-                          type="button"
-                          onClick={() => setSelectedLanguageKey(l.language_key)}
-                          className={`px-3 py-1.5 rounded-lg border border-current/40 bg-muted/20 text-xs ${row.text} hover:bg-accent transition-colors ${
-                            isSelected ? "ring-1 ring-primary/30" : ""
-                          }`}
-                        >
-                          {l.language}
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  <AnimatePresence>
-                    {activeLanguage && (
-                      <motion.div
-                        initial={{ opacity: 0, y: 6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 6 }}
-                        className="pt-3"
-                      >
-                        <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-3">
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="text-sm font-semibold text-foreground">{activeLanguage.language}</p>
-                            <p className="text-xs text-muted-foreground tabular-nums">
-                              {activeLanguage.total_attempts} {activeLanguage.total_attempts === 1 ? "attempt" : "attempts"}
-                            </p>
-                          </div>
-
-                          <div className="space-y-3">
-                            {SKILL_LEVEL_BARS.map((row) => {
-                              const level = activeLanguage[row.key];
-                              const count = level.count;
-                              const pct = activeLanguage.total_attempts
-                                ? Math.round((count / activeLanguage.total_attempts) * 100)
-                                : 0;
-
-                              return (
-                                <div key={row.key} className="space-y-1">
-                                  <div className="flex items-center justify-between text-xs">
-                                    <span className={`font-medium ${row.text}`}>{row.label}</span>
-                                    <span className="text-muted-foreground tabular-nums">
-                                      {count} {count === 1 ? "session" : "sessions"} · avg{" "}
-                                      {level.avg_score.toFixed(0)}%
-                                    </span>
-                                  </div>
-                                  <div className="h-2 rounded-full bg-muted/50 overflow-hidden">
-                                    <motion.div
-                                      initial={{ width: 0 }}
-                                      animate={{ width: `${pct}%` }}
-                                      transition={{ duration: 0.6, ease: "easeOut" }}
-                                      className={`h-full rounded-full ${row.bar}`}
-                                    />
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-              </>
-            )}
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Input card */}
-      <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.05 }}>
-        <Card className="border-border bg-card">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-primary" />
-              Generate Interview Questions
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Programming Language
-              </label>
+            <div className="flex flex-col md:flex-row gap-2">
               <Input
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                placeholder="e.g. Python, JavaScript, Rust, Go…"
-                className="bg-muted/40 border-border focus:border-primary/50"
+                value={topic}
+                onChange={(e) => {
+                  setTopic(e.target.value);
+                  setFormNotice(null);
+                }}
+                placeholder="e.g. Docker, SQL window functions, system design, React hooks"
+                maxLength={120}
+                className="h-12 text-base bg-background/60 border-border focus-visible:ring-primary/40"
               />
+              <Button
+                type="submit"
+                disabled={!topic.trim() || !!pendingSkill}
+                className="h-12 px-6 gap-2 shrink-0 bg-gradient-to-r from-violet-600 to-purple-500 hover:opacity-90 text-white shadow-[0_0_30px_-8px_rgba(139,92,246,0.8)]"
+              >
+                {pendingSkill && pendingSkill === topic.trim() ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
+                Create my plan
+              </Button>
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Difficulty Level
-              </label>
-              <div className="relative">
-                <button
-                  onClick={() => setOpen((v) => !v)}
-                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg border text-sm font-medium transition-all ${selected.bg} ${selected.color}`}
-                >
-                  <span>{selected.label}</span>
-                  <ChevronDown className={`w-4 h-4 transition-transform ${open ? "rotate-180" : ""}`} />
-                </button>
-                <AnimatePresence>
-                  {open && (
-                    <motion.div
-                      initial={{ opacity: 0, y: -4 }}
-                      animate={{ opacity: 1, y: 0 }}
-                      exit={{ opacity: 0, y: -4 }}
-                      className="absolute z-10 mt-1 w-full rounded-lg border border-border bg-card shadow-lg overflow-hidden"
-                    >
-                      {DIFFICULTIES.map((d) => (
-                        <button
-                          key={d.value}
-                          onClick={() => { setDifficulty(d.value); setOpen(false); }}
-                          className={`w-full text-left px-3 py-2.5 text-sm font-medium transition-colors hover:bg-accent ${d.color} ${difficulty === d.value ? "bg-accent" : ""}`}
-                        >
-                          {d.label}
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Topic <span className="normal-case font-normal">(optional)</span>
-              </label>
-              <Input
-                value={focusTopic}
-                onChange={(e) => setFocusTopic(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleGenerate()}
-                placeholder="e.g. DSA, Data Engineer, Cybersecurity, DevOps…"
-                className="bg-muted/40 border-border focus:border-primary/50"
-              />
-            </div>
-
-            {/* Question count */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                Number of Questions
-              </label>
-              <div className="flex gap-2 flex-wrap">
-                {[3, 5, 7, 10].map((n) => (
+            <div className="grid grid-cols-1 md:grid-cols-[auto_minmax(0,1fr)] gap-3 mt-3">
+              <div className="flex rounded-lg border border-border bg-background/40 p-0.5 self-start">
+                {LEVELS.map((l) => (
                   <button
-                    key={n}
-                    onClick={() => setQuestionCount(n)}
-                    className={`px-4 py-2 rounded-lg border text-sm font-medium transition-all ${
-                      questionCount === n
-                        ? "bg-primary text-primary-foreground border-primary"
-                        : "bg-muted/40 text-muted-foreground border-border hover:border-primary/50 hover:text-foreground"
-                    }`}
+                    key={l.value}
+                    type="button"
+                    onClick={() => setLevel((cur) => (cur === l.value ? "" : l.value))}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-xs font-medium transition-colors",
+                      level === l.value ? "bg-primary/25 text-foreground" : "text-muted-foreground hover:text-foreground"
+                    )}
                   >
-                    {n}
+                    {l.label}
                   </button>
                 ))}
               </div>
+              <Input
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                placeholder="Your goal (optional), e.g. pass a data engineering interview in 2 weeks"
+                maxLength={300}
+                className="h-9 text-sm bg-background/40 border-border"
+              />
             </div>
 
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="flex items-center gap-2 p-3 rounded-lg bg-red-500/10 border border-red-500/20 text-red-400 text-sm"
-                >
-                  <AlertCircle className="w-4 h-4 shrink-0" />
-                  {error}
-                </motion.div>
-              )}
-            </AnimatePresence>
+            {formNotice && <p className="text-xs text-amber-400 mt-3">{formNotice}</p>}
 
-            <Button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground"
+            <div className="mt-5 space-y-2">
+              {recommendedChips.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground mr-1">
+                    Missing for {overview?.target_role || "your target job"}:
+                  </span>
+                  {recommendedChips.map((r) => (
+                    <button
+                      key={r.skill}
+                      type="button"
+                      onClick={() => setTopic(r.skill)}
+                      className="flex items-center gap-1.5 rounded-full border border-border bg-background/40 px-3 py-1 text-xs text-foreground hover:border-primary/50 transition-colors"
+                    >
+                      <span
+                        className={cn("w-1.5 h-1.5 rounded-full", r.priority === "High" ? "bg-red-400" : "bg-amber-400")}
+                      />
+                      {r.skill}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {popularChips.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground mr-1">Popular:</span>
+                  {popularChips.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setTopic(t)}
+                      className="rounded-full border border-border bg-background/40 px-3 py-1 text-xs text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors"
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {overview && !overview.has_analysis && (
+                <p className="text-xs text-muted-foreground pt-1">
+                  Tip: <Link href="/analyze" className="text-primary hover:underline">analyze your resume</Link>{" "}
+                  against a job to see which skills you&apos;re missing.
+                </p>
+              )}
+            </div>
+          </motion.form>
+
+          {overview?.has_analysis && overview.total > 0 && (
+            <motion.div
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.08 }}
+              className={cn(panel, "p-5 flex flex-col md:flex-row md:items-center gap-5")}
             >
-              {loading ? (
+              <ReadinessRing value={overview.readiness} />
+              <div className="flex-1 min-w-0">
+                <p className="text-base font-semibold text-foreground">Skill Readiness</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  {overview.covered} of {overview.total} target skills covered
+                  {overview.target_role && <> for {overview.target_role}</>}
+                </p>
+              </div>
+              <div className="grid grid-cols-3 gap-8 text-center">
+                {[
+                  { label: "Covered", value: overview.covered },
+                  { label: "In Progress", value: overview.in_progress },
+                  { label: "To Learn", value: overview.to_learn },
+                ].map((s) => (
+                  <div key={s.label}>
+                    <p className="text-2xl font-semibold text-foreground">{s.value}</p>
+                    <p className="text-xs text-muted-foreground mt-1">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="grid grid-cols-1 lg:grid-cols-[minmax(0,0.85fr)_minmax(0,1.15fr)] gap-4 items-start"
+          >
+            {/* Your plans */}
+            <div className={cn(panel, "p-6")}>
+              <div className="flex items-start gap-3 mb-4">
+                <Layers className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div>
+                  <p className="text-base font-semibold text-foreground">Your Learning Plans</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Pick up where you left off.</p>
+                </div>
+              </div>
+              {plans.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-6 text-center">
+                  {overview ? "No plans yet. Enter a topic above to create your first one." : "Loading…"}
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {plans.map((p) => {
+                    const active = plan?.id === p.id;
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={!!pendingSkill}
+                        onClick={() => (active ? showRoadmap() : openPlan(p.skill, p.id, p.total_lessons === 0))}
+                        className={cn(
+                          "w-full rounded-xl px-3 py-3 text-left transition-colors",
+                          active ? "bg-primary/10 ring-1 ring-primary/30" : "hover:bg-accent/50"
+                        )}
+                      >
+                        <div className="flex items-center justify-between gap-3 mb-2">
+                          <span className="flex items-center gap-2 text-sm text-foreground truncate">
+                            {p.skill}
+                            {pendingSkill === p.skill && <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />}
+                            {p.progress >= 100 && <Check className="w-3.5 h-3.5 text-green-400" />}
+                          </span>
+                          {p.total_lessons > 0 ? (
+                            <span className="text-xs text-muted-foreground shrink-0">
+                              {p.completed_lessons}/{p.total_lessons} lessons
+                            </span>
+                          ) : (
+                            <span className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0">
+                              {p.priority && (
+                                <span
+                                  className={cn(
+                                    "w-1.5 h-1.5 rounded-full",
+                                    p.priority === "High" ? "bg-red-400" : "bg-amber-400"
+                                  )}
+                                />
+                              )}
+                              Not started
+                            </span>
+                          )}
+                        </div>
+                        {p.total_lessons > 0 ? (
+                          <ProgressBar value={p.progress} />
+                        ) : (
+                          <p className="text-[11px] text-muted-foreground">
+                            {p.source === "analysis"
+                              ? `Missing from your resume${p.priority ? ` · ${p.priority} priority` : ""}`
+                              : "Click to build the roadmap"}
+                          </p>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Roadmap */}
+            <div ref={roadmapRef} className={cn(panel, "p-6 scroll-mt-24")}>
+              <div className="flex items-start gap-3 mb-5">
+                <BookOpen className="w-5 h-5 text-muted-foreground mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-base font-semibold text-foreground">
+                    Learning Roadmap{plan && !pendingSkill && <span className="text-primary">: {plan.skill}</span>}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    {(!pendingSkill && plan?.summary) || "A focused, step-by-step plan for your topic."}
+                  </p>
+                  {plan && !pendingSkill && (plan.level || plan.goal) && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {plan.level && (
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground capitalize">
+                          {plan.level}
+                        </span>
+                      )}
+                      {plan.goal && (
+                        <span className="rounded-md bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                          Goal: {plan.goal}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+                {plan && !pendingSkill && (
+                  <button
+                    type="button"
+                    onClick={handleDeletePlan}
+                    aria-label="Delete plan"
+                    className="text-muted-foreground hover:text-red-400"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              {planError && <p className="text-sm text-red-400 mb-3">{planError}</p>}
+
+              {pendingSkill && (!plan || plan.skill.toLowerCase() !== pendingSkill.toLowerCase()) ? (
+                <div className="flex flex-col items-center justify-center py-14 gap-3 text-center">
+                  <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <p className="text-sm text-foreground">Building your {pendingSkill} plan…</p>
+                  <p className="text-xs text-muted-foreground">The AI is planning your lessons.</p>
+                </div>
+              ) : plan ? (
                 <>
-                  <motion.div
-                    animate={{ rotate: 360 }}
-                    transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                    className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
-                  />
-                  Generating questions…
+                  <ol className="relative">
+                    {plan.lessons.map((l, i) => {
+                      const last = i === plan.lessons.length - 1;
+                      return (
+                        <li key={l.id} className="relative pl-10 pb-5 last:pb-0">
+                          {!last && (
+                            <span
+                              className={cn(
+                                "absolute left-[11px] top-7 bottom-0 w-0.5",
+                                l.completed ? "bg-primary/60" : "bg-border"
+                              )}
+                            />
+                          )}
+                          <span
+                            className={cn(
+                              "absolute left-0 top-0.5 w-6 h-6 rounded-full flex items-center justify-center",
+                              l.completed
+                                ? "bg-primary text-white shadow-[0_0_12px_hsl(var(--primary)/0.6)]"
+                                : "border-2 border-muted-foreground/40 bg-card"
+                            )}
+                          >
+                            {l.completed && <Check className="w-3.5 h-3.5" />}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setOpenLessonId(l.id)}
+                            className="w-full flex items-start justify-between gap-3 text-left group"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">
+                                {i + 1}. {l.title}
+                              </p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{l.description}</p>
+                            </div>
+                            {l.duration && (
+                              <span className="shrink-0 rounded-md border border-border bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                                {l.duration}
+                              </span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ol>
+                  {(() => {
+                    const nextLesson = plan.lessons.find((l) => !l.completed);
+                    return (
+                      <Button
+                        onClick={() => setOpenLessonId((nextLesson ?? plan.lessons[0]).id)}
+                        className="mt-6 w-full gap-2 bg-gradient-to-r from-violet-600 to-purple-500 hover:opacity-90 text-white"
+                      >
+                        <Sparkles className="w-4 h-4" />
+                        {nextLesson
+                          ? plan.lessons.some((l) => l.completed)
+                            ? `Continue: ${nextLesson.title}`
+                            : "Start learning"
+                          : "Review lessons"}
+                        <ArrowRight className="w-4 h-4" />
+                      </Button>
+                    );
+                  })()}
                 </>
               ) : (
-                <>
-                  <Sparkles className="w-4 h-4" />
-                  Generate Questions
-                </>
+                <div className="flex flex-col items-center justify-center py-14 gap-2 text-center">
+                  <BookOpen className="w-8 h-8 text-muted-foreground/60" />
+                  <p className="text-sm text-foreground">Your plan will appear here</p>
+                  <p className="text-xs text-muted-foreground max-w-xs">
+                    {plans.length > 0
+                      ? "Pick a plan from Your Learning Plans, or type a new topic above."
+                      : <>Type what you want to learn above and click &quot;Create my plan&quot;.</>}
+                  </p>
+                </div>
               )}
-            </Button>
-          </CardContent>
-        </Card>
-      </motion.div>
-
-      {/* Questions */}
-      <AnimatePresence>
-        {questions.length > 0 && (
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            className="space-y-4"
-          >
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-border" />
-              <Badge variant="secondary" className="bg-primary/20 text-primary border-primary/30 text-xs px-3">
-                {language} · {selected.label}
-                {focusTopic.trim() && ` · ${focusTopic.trim()}`}
-                {" · "}{questions.length} {questions.length === 1 ? "Question" : "Questions"}
-              </Badge>
-              <div className="h-px flex-1 bg-border" />
             </div>
-
-            {questions.map((q, i) => {
-              const Icon = CATEGORY_ICONS[q.category] ?? Code2;
-              const result = results[i];
-              const runOutput = runOutputs[i];
-              const isChecking = checking.has(i);
-              const isRunning = runningCode.has(i);
-
-              return (
-                <motion.div
-                  key={i}
-                  initial={{ opacity: 0, y: 12 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: i * 0.07 }}
-                >
-                  <Card className="border-border bg-card">
-                    <CardContent className="p-4 space-y-4">
-                      {/* Question header */}
-                      <div className="flex items-start gap-3">
-                        <div className={`shrink-0 w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${selected.bg} ${selected.color}`}>
-                          {i + 1}
-                        </div>
-                        <div className="flex-1 space-y-2">
-                          <div className="flex items-center gap-2 flex-wrap">
-                            <Badge variant="secondary" className="text-[10px] bg-muted text-muted-foreground flex items-center gap-1">
-                              <Icon className="w-3 h-3" />
-                              {q.category}
-                            </Badge>
-                          </div>
-                          <p className="text-sm text-foreground leading-relaxed">{q.question}</p>
-                        </div>
-                      </div>
-
-                      {/* Hint toggle */}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => toggleHint(i)}
-                        className="gap-1.5 text-xs border-primary/30 text-primary hover:bg-primary/10 h-7"
-                      >
-                        <Lightbulb className="w-3 h-3" />
-                        {revealed.has(i) ? "Hide Hint" : "Show Hint"}
-                      </Button>
-
-                      <AnimatePresence>
-                        {revealed.has(i) && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: "auto" }}
-                            exit={{ opacity: 0, height: 0 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="flex items-start gap-2 p-3 rounded-lg bg-primary/5 border border-primary/15">
-                              <Lightbulb className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                              <p className="text-xs text-muted-foreground leading-relaxed">{q.hint}</p>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Answer box */}
-                      <div className="space-y-2">
-                        <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                          Your Answer
-                        </label>
-                        <textarea
-                          value={answers[i] ?? ""}
-                          onChange={(e) => {
-                            setAnswers((prev) => ({ ...prev, [i]: e.target.value }));
-                            setRunOutputs((prev) => {
-                              if (prev[i] == null) return prev;
-                              const next = { ...prev };
-                              delete next[i];
-                              return next;
-                            });
-                          }}
-                          placeholder="Write your answer here…"
-                          rows={4}
-                          className="w-full resize-y rounded-lg border border-border bg-muted/40 px-3 py-2.5 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary/50 transition-colors font-mono"
-                        />
-                        <div className="flex flex-wrap gap-2">
-                          {canRunCode && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleRunCode(i)}
-                              disabled={isRunning || !(answers[i] ?? "").trim()}
-                              className="gap-1.5 border-border text-foreground hover:bg-muted/60"
-                            >
-                              {isRunning ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  Running…
-                                </>
-                              ) : (
-                                <>
-                                  <Play className="w-3.5 h-3.5" />
-                                  Run Code
-                                </>
-                              )}
-                            </Button>
-                          )}
-                          <Button
-                            size="sm"
-                            onClick={() => handleCheckAnswer(i)}
-                            disabled={isChecking || !(answers[i] ?? "").trim()}
-                            className="gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground"
-                          >
-                            {isChecking ? (
-                              <>
-                                <motion.div
-                                  animate={{ rotate: 360 }}
-                                  transition={{ repeat: Infinity, duration: 0.8, ease: "linear" }}
-                                  className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full"
-                                />
-                                Checking…
-                              </>
-                            ) : (
-                              <>
-                                <SendHorizonal className="w-3.5 h-3.5" />
-                                Check Answer
-                              </>
-                            )}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Code output */}
-                      <AnimatePresence>
-                        {runOutput && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0 }}
-                            className="space-y-2"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Terminal className="w-3.5 h-3.5 text-muted-foreground" />
-                              <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
-                                Output
-                                {runOutput.exit_code === 0 ? (
-                                  <span className="ml-2 text-green-400 normal-case tracking-normal">· exit 0</span>
-                                ) : (
-                                  <span className="ml-2 text-red-400 normal-case tracking-normal">· exit {runOutput.exit_code}</span>
-                                )}
-                              </p>
-                            </div>
-                            <pre className="text-xs font-mono leading-relaxed rounded-lg border border-border bg-black/40 p-3 overflow-x-auto whitespace-pre-wrap min-h-[2.5rem]">
-                              {runOutput.stdout && (
-                                <span className="text-green-300">{runOutput.stdout}</span>
-                              )}
-                              {runOutput.stderr && (
-                                <span className={runOutput.stdout ? "text-red-300" : "text-red-300"}>
-                                  {runOutput.stdout ? "\n" : ""}
-                                  {runOutput.stderr}
-                                </span>
-                              )}
-                              {!runOutput.stdout && !runOutput.stderr && (
-                                <span className="text-muted-foreground">
-                                  (no output — see the Run Code tip in the question above)
-                                </span>
-                              )}
-                            </pre>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-
-                      {/* Result */}
-                      <AnimatePresence>
-                        {result && (
-                          <motion.div
-                            initial={{ opacity: 0, y: 6 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            exit={{ opacity: 0 }}
-                            className="space-y-3"
-                          >
-                            {/* Score bar */}
-                            <div className={`flex items-center gap-3 p-3 rounded-lg border ${result.correct ? "bg-green-500/10 border-green-500/20" : "bg-red-500/10 border-red-500/20"}`}>
-                              {result.correct
-                                ? <CheckCircle2 className="w-5 h-5 text-green-400 shrink-0" />
-                                : <XCircle className="w-5 h-5 text-red-400 shrink-0" />
-                              }
-                              <div className="flex-1">
-                                <p className={`text-sm font-semibold ${result.correct ? "text-green-400" : "text-red-400"}`}>
-                                  {result.correct ? "Correct!" : "Not quite right"}
-                                </p>
-                              </div>
-                              <div className="flex items-center gap-1.5">
-                                <Star className="w-3.5 h-3.5 text-yellow-400" />
-                                <span className="text-sm font-bold text-yellow-400">{result.score}/100</span>
-                              </div>
-                            </div>
-
-                            {/* Score progress bar */}
-                            <div className="w-full h-1.5 bg-muted rounded-full overflow-hidden">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${result.score}%` }}
-                                transition={{ duration: 0.6, ease: "easeOut" }}
-                                className={`h-full rounded-full ${result.score >= 80 ? "bg-green-400" : result.score >= 50 ? "bg-yellow-400" : "bg-red-400"}`}
-                              />
-                            </div>
-
-                            {/* Feedback */}
-                            <div className="p-3 rounded-lg bg-muted/40 border border-border space-y-2">
-                              <div className="flex items-center justify-between">
-                                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Feedback</p>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => handleSpeak(i)}
-                                  disabled={loadingAudio.has(i)}
-                                  className={`h-7 gap-1.5 text-xs px-2 transition-all ${
-                                    speaking === i
-                                      ? "text-primary bg-primary/10 hover:bg-primary/20"
-                                      : "text-muted-foreground hover:text-primary hover:bg-primary/10"
-                                  }`}
-                                >
-                                  {loadingAudio.has(i) ? (
-                                    <>
-                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                      Loading…
-                                    </>
-                                  ) : speaking === i ? (
-                                    <>
-                                      <motion.div
-                                        animate={{ scale: [1, 1.2, 1] }}
-                                        transition={{ repeat: Infinity, duration: 1 }}
-                                      >
-                                        <VolumeX className="w-3.5 h-3.5" />
-                                      </motion.div>
-                                      Stop
-                                    </>
-                                  ) : (
-                                    <>
-                                      <Volume2 className="w-3.5 h-3.5" />
-                                      Listen
-                                    </>
-                                  )}
-                                </Button>
-                              </div>
-                              <p className="text-sm text-foreground leading-relaxed">{result.feedback}</p>
-                            </div>
-
-                            {/* Ideal answer */}
-                            {result.ideal_answer && (
-                              <div className="p-3 rounded-lg bg-primary/5 border border-primary/15 space-y-2">
-                                <p className="text-xs font-medium text-primary uppercase tracking-wide">Model Answer</p>
-                                {result.ideal_answer.split(/\n\n+/).map((block, bi) => {
-                                  const isCode = /^\s*(def |class |function |return |public |SELECT |INSERT |import |from |for |while |\w+\(|\w+\s*=)/.test(block) || block.includes('\n  ') || block.includes('\n    ');
-                                  return isCode ? (
-                                    <pre key={bi} className="text-xs text-green-300 bg-black/30 rounded p-3 overflow-x-auto whitespace-pre-wrap font-mono leading-relaxed">{block.trim()}</pre>
-                                  ) : (
-                                    <p key={bi} className="text-sm text-muted-foreground leading-relaxed">{block.trim()}</p>
-                                  );
-                                })}
-                              </div>
-                            )}
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              );
-            })}
           </motion.div>
-        )}
-      </AnimatePresence>
+        </>
+      )}
+
+      <LessonViewer
+        skill={plan?.skill ?? ""}
+        lessonId={openLessonId}
+        lessons={plan?.lessons ?? []}
+        onOpenLesson={setOpenLessonId}
+        onClose={() => setOpenLessonId(null)}
+        onPlanUpdated={handlePlanUpdated}
+      />
     </div>
   );
 }
