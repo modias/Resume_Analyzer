@@ -212,7 +212,7 @@ async def create_plan(
         return _plan_out(plan)
 
     if plan is None:
-        plan = LearningPlan(user_id=current_user.id, skill=skill, skill_key=key, source="custom")
+        plan = LearningPlan(user_id=current_user.id, skill=skill, skill_key=key, source="custom", lessons=[])
         db.add(plan)
     await _build_roadmap(db, current_user, plan, level=body.level, goal=body.goal.strip())
     return _plan_out(plan)
