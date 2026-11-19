@@ -1,45 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { Header } from "@/components/shell/Header";
-import { isAuthenticated } from "@/lib/api";
 
-const AUTH_ROUTES = ["/login", "/register"];
+const AUTH_ROUTES = ["/sign-in", "/sign-up", "/login"];
 
-/** Logged-out users can view these without redirecting to /login */
+/** Logged-out users can view these without redirecting to /sign-in */
 function isPublicRoute(pathname: string): boolean {
   if (pathname === "/") return true;
   return AUTH_ROUTES.some((r) => pathname.startsWith(r));
 }
 
+/** Signed-in pages that render full-screen, without the sidebar and header */
+const BARE_ROUTES = ["/onboarding"];
+
 export function ShellWrapper({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
+  const { isLoaded, isSignedIn } = useAuth();
   const isPublicPage = isPublicRoute(pathname);
-  const [mounted, setMounted] = useState(false);
-  const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    setMounted(true);
-    const ok = isAuthenticated();
-    setAuthed(ok);
-    if (!isPublicPage && !ok) {
-      router.replace("/login");
+    if (!isPublicPage && isLoaded && !isSignedIn) {
+      router.replace("/sign-in");
     }
-  }, [isPublicPage, router]);
+  }, [isPublicPage, isLoaded, isSignedIn, router]);
 
   if (isPublicPage) {
     return <>{children}</>;
   }
 
-  if (!mounted) {
+  if (!isLoaded || !isSignedIn) {
     return null;
   }
 
-  if (!authed) {
-    return null;
+  if (BARE_ROUTES.some((r) => pathname.startsWith(r))) {
+    return <>{children}</>;
   }
 
   return (

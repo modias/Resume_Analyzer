@@ -72,41 +72,22 @@ export async function checkBackendHealth(): Promise<boolean> {
   }
 }
 
-// ─── Token storage ────────────────────────────────────────────────────────────
+// ─── Session token ────────────────────────────────────────────────────────────
 
-const TOKEN_KEY = "ii_access_token";
-const USER_KEY = "ii_user";
+const SESSION_EXPIRED_MESSAGE = "Session expired. Please sign in again.";
 
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
+type TokenGetter = () => Promise<string | null>;
+
+let tokenGetter: TokenGetter = async () => null;
+
+/** Registered by ClerkTokenBridge so non-React code can read the Clerk session token. */
+export function setAuthTokenGetter(getter: TokenGetter): void {
+  tokenGetter = getter;
 }
 
-export function setToken(token: string): void {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken(): void {
-  localStorage.removeItem(TOKEN_KEY);
-  localStorage.removeItem(USER_KEY);
-}
-
-export function isAuthenticated(): boolean {
-  return !!getToken();
-}
-
-export function getCachedUser(): User | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(USER_KEY);
-    return raw ? (JSON.parse(raw) as User) : null;
-  } catch {
-    return null;
-  }
-}
-
-export function setCachedUser(user: User): void {
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+async function authHeaders(): Promise<Record<string, string>> {
+  const token = await tokenGetter();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 // ─── Core fetch wrapper ───────────────────────────────────────────────────────
@@ -121,15 +102,11 @@ export async function apiFetch<T = unknown>(
   options: FetchOptions = {}
 ): Promise<T> {
   const { skipAuth = false, timeoutMs, ...rest } = options;
-  const token = getToken();
 
   const headers: Record<string, string> = {
     ...(rest.headers as Record<string, string>),
+    ...(skipAuth ? {} : await authHeaders()),
   };
-
-  if (!skipAuth && token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   const response = await fetchWithTimeout(
     `${API_BASE}${path}`,
@@ -138,8 +115,7 @@ export async function apiFetch<T = unknown>(
   );
 
   if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please log in again.");
+    throw new Error(SESSION_EXPIRED_MESSAGE);
   }
 
   if (!response.ok) {
@@ -169,55 +145,6 @@ export interface User {
   dream_companies: string[];
   dream_job: string;
   is_verified: boolean;
-  google_id?: string | null;
-  profile_picture_url?: string | null;
-}
-
-export interface AuthResponse {
-  access_token: string;
-  user: User;
-}
-
-export async function register(
-  name: string,
-  email: string,
-  password: string,
-  school = "",
-  major = "",
-  skills: string[] = [],
-  dream_companies: string[] = [],
-): Promise<AuthResponse> {
-  const data = await apiFetch<AuthResponse>("/auth/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password, school, major, skills, dream_companies }),
-    skipAuth: true,
-  });
-  setToken(data.access_token);
-  setCachedUser(data.user);
-  return data;
-}
-
-export async function login(
-  email: string,
-  password: string
-): Promise<AuthResponse> {
-  const data = await apiFetch<AuthResponse>("/auth/login", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-    skipAuth: true,
-  });
-  setToken(data.access_token);
-  setCachedUser(data.user);
-  return data;
-}
-
-export function logout(): void {
-  clearToken();
-  if (typeof window !== "undefined") {
-    window.location.replace("/login");
-  }
 }
 
 export async function getMe(): Promise<User> {
@@ -227,13 +154,11 @@ export async function getMe(): Promise<User> {
 export async function updateMe(
   updates: Partial<Pick<User, "name" | "school" | "major" | "skills" | "dream_companies" | "dream_job">>
 ): Promise<User> {
-  const user = await apiFetch<User>("/auth/me", {
+  return apiFetch<User>("/auth/me", {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(updates),
   });
-  setCachedUser(user);
-  return user;
 }
 
 
@@ -247,12 +172,10 @@ export async function hasUploadedResume(): Promise<boolean> {
 }
 
 export async function uploadResume(resume: File): Promise<{ uploaded: boolean; filename: string; skills_detected: number }> {
-  const token = getToken();
   const formData = new FormData();
   formData.append("resume", resume);
 
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const headers = await authHeaders();
 
   const response = await fetchWithTimeout(
     `${API_BASE}/resume/upload`,
@@ -261,8 +184,7 @@ export async function uploadResume(resume: File): Promise<{ uploaded: boolean; f
   );
 
   if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please log in again.");
+    throw new Error(SESSION_EXPIRED_MESSAGE);
   }
 
   if (!response.ok) {
@@ -275,7 +197,6 @@ export async function uploadResume(resume: File): Promise<{ uploaded: boolean; f
 
 export async function deleteAccount(): Promise<void> {
   await apiFetch<void>("/auth/me", { method: "DELETE" });
-  clearToken();
 }
 
 // ─── Resume Analysis ──────────────────────────────────────────────────────────
@@ -316,16 +237,13 @@ export async function analyzeResume(
   jobTitle = "",
   company = ""
 ): Promise<AnalyzeResponse> {
-  const token = getToken();
-
   const formData = new FormData();
   formData.append("resume", resume);
   formData.append("job_description", jobDescription);
   formData.append("job_title", jobTitle);
   formData.append("company", company);
 
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const headers = await authHeaders();
 
   const response = await fetchWithTimeout(
     `${API_BASE}/resume/analyze`,
@@ -515,12 +433,10 @@ export interface StructuredResumePayload {
 export async function exportResumePdf(
   structuredResume: StructuredResumePayload
 ): Promise<Blob> {
-  const token = getToken();
-
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
+    ...(await authHeaders()),
   };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
 
   const response = await fetchWithTimeout(
     `${API_BASE}/resume/export-pdf`,
@@ -529,8 +445,7 @@ export async function exportResumePdf(
   );
 
   if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please log in again.");
+    throw new Error(SESSION_EXPIRED_MESSAGE);
   }
 
   if (!response.ok) {
@@ -625,17 +540,17 @@ export async function saveSkillSession(
   difficulty: string,
   questions: PracticeQuestionScore[]
 ): Promise<SavePracticeSessionResult> {
-  const token = getToken();
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (token) headers["Authorization"] = `Bearer ${token}`;
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+    ...(await authHeaders()),
+  };
   const response = await fetchWithTimeout(
     `${API_BASE}/interview/save-session`,
     { method: "POST", headers, body: JSON.stringify({ language, difficulty, questions }) },
     DEFAULT_TIMEOUT_MS
   );
   if (response.status === 401) {
-    clearToken();
-    throw new Error("Session expired. Please log in again.");
+    throw new Error(SESSION_EXPIRED_MESSAGE);
   }
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));

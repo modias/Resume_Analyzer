@@ -10,9 +10,9 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True, index=True)
     name: Mapped[str] = mapped_column(String(120))
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    # Legacy column from password auth; kept so existing databases stay insertable.
     hashed_password: Mapped[str] = mapped_column(String(255), default="")
-    linkedin_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
-    google_id: Mapped[str | None] = mapped_column(String(120), nullable=True, unique=True, index=True)
+    clerk_id: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
     school: Mapped[str] = mapped_column(String(120), default="")
     major: Mapped[str] = mapped_column(String(120), default="")
     # JSON arrays stored as text — e.g. '["Python","SQL"]'
@@ -23,10 +23,7 @@ class User(Base):
         DateTime, default=func.now()
     )
 
-    # Email verification
     is_verified: Mapped[bool] = mapped_column(default=False)
-    verification_code: Mapped[str | None] = mapped_column(String(6), nullable=True)
-    verification_expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime, nullable=True)
 
     analyses: Mapped[list["Analysis"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821
     practice_sessions: Mapped[list["PracticeSession"]] = relationship(back_populates="user", cascade="all, delete-orphan")  # noqa: F821

@@ -1,26 +1,16 @@
 import json
 import logging
-import urllib.parse
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.database import get_db
 from app.models.user import User
 from app.models.log import UserLog
-from app.schemas.user import (
-    UserRegister,
-    UserLogin,
-    TokenOut,
-    UserOut,
-    UserUpdate,
-    UserLogOut,
-)
-from app.config import get_settings
-from app.services.auth import hash_password, verify_password, create_access_token, get_current_user
+from app.schemas.user import UserOut, UserUpdate, UserLogOut
+from app.services.auth import delete_clerk_user, get_current_user
 
 logger = logging.getLogger(__name__)
 
@@ -58,58 +48,6 @@ async def _log(db: AsyncSession, user_id: int, action: str, detail: str = "", ip
     db.add(entry)
     await db.flush()
     logger.info("user_log | user_id=%s action=%s detail=%s ip=%s", user_id, action, detail, ip)
-
-
-# ---------------------------------------------------------------------------
-# Register
-# ---------------------------------------------------------------------------
-
-@router.post("/register", response_model=TokenOut, status_code=status.HTTP_201_CREATED)
-async def register(body: UserRegister, request: Request, db: AsyncSession = Depends(get_db)):
-    existing = await db.execute(select(User).where(User.email == body.email))
-    if existing.scalar_one_or_none():
-        raise HTTPException(status_code=400, detail="Email already registered")
-
-    user = User(
-        name=body.name,
-        email=body.email,
-        hashed_password=hash_password(body.password),
-        school=body.school,
-        major=body.major,
-        skills=json.dumps(body.skills),
-        dream_companies=json.dumps(body.dream_companies),
-        dream_job=body.dream_job,
-        is_verified=True,
-    )
-    db.add(user)
-    await db.flush()  # get user.id before logging
-
-    await _log(db, user.id, "register", f"email={body.email}", _client_ip(request))
-    await db.commit()
-    await db.refresh(user)
-
-    token = create_access_token({"sub": str(user.id)})
-    return TokenOut(access_token=token, user=_to_user_out(user))
-
-
-# ---------------------------------------------------------------------------
-# Login
-# ---------------------------------------------------------------------------
-
-@router.post("/login", response_model=TokenOut)
-async def login(body: UserLogin, request: Request, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(User).where(User.email == body.email))
-    user = result.scalar_one_or_none()
-
-    if not user or not verify_password(body.password, user.hashed_password):
-        logger.warning("Failed login attempt for email=%s ip=%s", body.email, _client_ip(request))
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-
-    await _log(db, user.id, "login", f"email={body.email}", _client_ip(request))
-    await db.commit()
-
-    token = create_access_token({"sub": str(user.id)})
-    return TokenOut(access_token=token, user=_to_user_out(user))
 
 
 # ---------------------------------------------------------------------------
@@ -157,144 +95,17 @@ async def delete_me(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    if current_user.clerk_id:
+        try:
+            await delete_clerk_user(current_user.clerk_id)
+        except httpx.HTTPError as exc:
+            logger.warning("Clerk user deletion failed for %s: %s", current_user.clerk_id, exc)
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="Could not delete your sign-in account.")
+
     await _log(db, current_user.id, "account_deleted", f"email={current_user.email}", _client_ip(request))
     await db.flush()
     await db.delete(current_user)
     await db.commit()
-
-
-# ---------------------------------------------------------------------------
-# Google OAuth
-# ---------------------------------------------------------------------------
-
-_GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
-_GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
-_GOOGLE_USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
-
-
-def _google_redirect_uri() -> str:
-    s = get_settings()
-    return f"{s.backend_url.rstrip('/')}/auth/google/callback"
-
-
-@router.get("/google")
-async def google_login():
-    """Redirect the user to Google's authorization page."""
-    s = get_settings()
-    if not s.google_client_id:
-        raise HTTPException(status_code=503, detail="Google OAuth is not configured on this server.")
-    redirect_uri = _google_redirect_uri()
-    params = {
-        "response_type": "code",
-        "client_id": s.google_client_id,
-        "redirect_uri": redirect_uri,
-        "scope": "openid email profile",
-        "access_type": "online",
-        "prompt": "select_account",
-    }
-    url = f"{_GOOGLE_AUTH_URL}?{urllib.parse.urlencode(params)}"
-    return RedirectResponse(url=url)
-
-
-@router.get("/google/callback")
-async def google_callback(
-    code: str | None = None,
-    error: str | None = None,
-    db: AsyncSession = Depends(get_db),
-):
-    """Exchange Google auth code for a user profile and issue a JWT."""
-    s = get_settings()
-    frontend_url = s.frontend_url or "http://localhost:3000"
-
-    if error or not code:
-        return RedirectResponse(url=f"{frontend_url}/login?google_error=access_denied")
-
-    redirect_uri = _google_redirect_uri()
-
-    # 1. Exchange code for access token
-    try:
-        async with httpx.AsyncClient() as client:
-            token_resp = await client.post(
-                _GOOGLE_TOKEN_URL,
-                data={
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": redirect_uri,
-                    "client_id": s.google_client_id,
-                    "client_secret": s.google_client_secret,
-                },
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                timeout=10,
-            )
-            if not token_resp.is_success:
-                logger.warning(
-                    "Google token exchange failed: status=%s body=%s",
-                    token_resp.status_code,
-                    token_resp.text,
-                )
-                return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
-
-            access_token = token_resp.json()["access_token"]
-
-            # 2. Fetch Google profile via OpenID Connect userinfo
-            profile_resp = await client.get(
-                _GOOGLE_USERINFO_URL,
-                headers={"Authorization": f"Bearer {access_token}"},
-                timeout=10,
-            )
-            if not profile_resp.is_success:
-                logger.warning(
-                    "Google userinfo failed: status=%s body=%s",
-                    profile_resp.status_code,
-                    profile_resp.text,
-                )
-                return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
-
-            profile = profile_resp.json()
-    except Exception as exc:
-        logger.warning("Google OAuth exception: %s", exc)
-        return RedirectResponse(url=f"{frontend_url}/login?google_error=oauth_failed")
-
-    google_id: str = profile.get("sub", "")
-    email: str = profile.get("email", "")
-    name: str = profile.get("name", profile.get("given_name", "Google User"))
-
-    if not google_id:
-        return RedirectResponse(url=f"{frontend_url}/login?google_error=no_profile")
-
-    # 3. Find or create user
-    user: User | None = None
-
-    result = await db.execute(select(User).where(User.google_id == google_id))
-    user = result.scalar_one_or_none()
-
-    if not user and email:
-        result = await db.execute(select(User).where(User.email == email))
-        user = result.scalar_one_or_none()
-        if user:
-            user.google_id = google_id
-
-    if not user:
-        fallback_email = email or f"google_{google_id}@google.local"
-        user = User(
-            name=name,
-            email=fallback_email,
-            hashed_password="",
-            google_id=google_id,
-            is_verified=True,
-        )
-        db.add(user)
-        await db.flush()
-        logger.info("New Google user created: id=%s email=%s", user.id, fallback_email)
-
-    await db.commit()
-    await db.refresh(user)
-
-    # 4. Issue JWT and redirect to frontend
-    jwt = create_access_token({"sub": str(user.id)})
-    user_out = _to_user_out(user)
-    encoded_user = urllib.parse.quote(user_out.model_dump_json())
-    return RedirectResponse(url=f"{frontend_url}/login?token={jwt}&user={encoded_user}")
 
 
 # ---------------------------------------------------------------------------

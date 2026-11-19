@@ -1,3 +1,4 @@
+import { ClerkProvider } from "@clerk/nextjs";
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
@@ -5,6 +6,24 @@ import { AppProviders } from "@/components/providers/AppProviders";
 import { ShellWrapper } from "@/components/shell/ShellWrapper";
 
 const inter = Inter({ subsets: ["latin"] });
+
+// The theme tokens in globals.css are bare HSL channels, so they need hsl() here.
+const clerkAppearance = {
+  variables: {
+    colorBackground: "hsl(var(--card))",
+    colorForeground: "hsl(var(--card-foreground))",
+    colorNeutral: "hsl(var(--foreground))",
+    colorPrimary: "hsl(var(--primary))",
+    colorPrimaryForeground: "hsl(var(--primary-foreground))",
+    colorMuted: "hsl(var(--muted))",
+    colorMutedForeground: "hsl(var(--muted-foreground))",
+    colorInput: "hsl(var(--muted))",
+    colorInputForeground: "hsl(var(--card-foreground))",
+    colorDanger: "hsl(var(--destructive))",
+    colorRing: "hsl(var(--ring))",
+    borderRadius: "var(--radius)",
+  },
+};
 
 export const metadata: Metadata = {
   title: "CareerCore",
@@ -25,9 +44,11 @@ export default function RootLayout({
         }} />
       </head>
       <body className={inter.className}>
-        <AppProviders>
-          <ShellWrapper>{children}</ShellWrapper>
-        </AppProviders>
+        <ClerkProvider appearance={clerkAppearance} afterSignOutUrl="/">
+          <AppProviders>
+            <ShellWrapper>{children}</ShellWrapper>
+          </AppProviders>
+        </ClerkProvider>
       </body>
     </html>
   );

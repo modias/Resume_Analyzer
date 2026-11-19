@@ -2,9 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { Bell, LogOut, Search, User } from "lucide-react";
+import { useClerk } from "@clerk/nextjs";
+import { Bell, LogOut, Search, Shield, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { getMe, logout, type User as ApiUser } from "@/lib/api";
+import { getMe, type User as ApiUser } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 
 export const GLOBAL_SEARCH_EVENT = "careercore:search";
@@ -17,6 +18,7 @@ export function Header() {
   const searchRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const pathname = usePathname();
+  const { signOut, openUserProfile } = useClerk();
 
   useEffect(() => {
     getMe().then(setUser).catch(() => {});
@@ -120,9 +122,18 @@ export function Header() {
                   Profile & Settings
                 </a>
 
+                {/* Sign-in methods, password, sessions */}
+                <button
+                  onClick={() => { setOpen(false); openUserProfile(); }}
+                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-muted-foreground hover:text-foreground hover:bg-accent transition-colors"
+                >
+                  <Shield className="w-4 h-4" />
+                  Account & Security
+                </button>
+
                 {/* Log out */}
                 <button
-                  onClick={() => { setOpen(false); logout(); }}
+                  onClick={() => { setOpen(false); signOut({ redirectUrl: "/" }); }}
                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-sm text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors border-t border-border"
                 >
                   <LogOut className="w-4 h-4" />
