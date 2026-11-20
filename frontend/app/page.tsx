@@ -3,20 +3,19 @@
 import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useAuth } from "@clerk/nextjs";
 import { motion } from "framer-motion";
 import { Sparkles, LogIn, UserPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { isAuthenticated } from "@/lib/api";
 
 export default function HomePage() {
   const router = useRouter();
-  const { isSignedIn } = useAuth();
 
   useEffect(() => {
-    if (isSignedIn) {
+    if (isAuthenticated()) {
       router.replace("/dashboard");
     }
-  }, [isSignedIn, router]);
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center p-6 relative overflow-hidden">
@@ -43,13 +42,13 @@ export default function HomePage() {
 
         <div className="flex flex-col sm:flex-row gap-3 justify-center">
           <Button asChild size="lg" className="gap-2 bg-primary hover:bg-primary/90">
-            <Link href="/sign-in">
+            <Link href="/login">
               <LogIn className="w-4 h-4" />
               Sign in
             </Link>
           </Button>
           <Button asChild size="lg" variant="outline" className="gap-2 border-border">
-            <Link href="/sign-up">
+            <Link href="/login?register=1">
               <UserPlus className="w-4 h-4" />
               Create account
             </Link>

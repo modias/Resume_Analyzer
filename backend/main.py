@@ -9,6 +9,7 @@ from app.models import analysis, user, practice  # noqa: F401 — ensure tables 
 from app.models import log  # noqa: F401
 from app.models import application  # noqa: F401
 from app.models import learning as learning_models  # noqa: F401
+from app.services.email import is_smtp_configured
 
 logger = logging.getLogger(__name__)
 
@@ -18,8 +19,11 @@ settings = get_settings()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
-    if not settings.clerk_secret_key:
-        logger.warning("CLERK_SECRET_KEY is not set — signed-in requests will fail until it is added to backend/.env.")
+    if not is_smtp_configured():
+        logger.warning(
+            "SMTP not configured — verification codes print to the server console only. "
+            "Set SMTP_USER and SMTP_PASSWORD in backend/.env (Gmail: use an App Password)."
+        )
     yield
 
 

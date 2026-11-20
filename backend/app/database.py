@@ -35,8 +35,6 @@ async def _migrate(conn) -> None:
         "ALTER TABLE users ADD COLUMN dream_job VARCHAR(120) DEFAULT ''",
         "ALTER TABLE users ADD COLUMN linkedin_id VARCHAR(120)",
         "ALTER TABLE users ADD COLUMN google_id VARCHAR(120)",
-        "ALTER TABLE users ADD COLUMN clerk_id VARCHAR(64)",
-        "CREATE UNIQUE INDEX IF NOT EXISTS ix_users_clerk_id ON users (clerk_id)",
         "ALTER TABLE analyses ADD COLUMN resume_text TEXT DEFAULT ''",
         "ALTER TABLE learning_plans ADD COLUMN level VARCHAR(20) DEFAULT ''",
         "ALTER TABLE learning_plans ADD COLUMN goal VARCHAR(300) DEFAULT ''",

@@ -1,5 +1,21 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 import datetime
+
+
+class UserRegister(BaseModel):
+    name: str
+    email: EmailStr
+    password: str
+    school: str = ""
+    major: str = ""
+    skills: list[str] = []
+    dream_companies: list[str] = []
+    dream_job: str = ""
+
+
+class UserLogin(BaseModel):
+    email: EmailStr
+    password: str
 
 
 class UserOut(BaseModel):
@@ -17,6 +33,12 @@ class UserOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
+
 class UserUpdate(BaseModel):
     name: str | None = None
     school: str | None = None
@@ -24,6 +46,15 @@ class UserUpdate(BaseModel):
     skills: list[str] | None = None
     dream_companies: list[str] | None = None
     dream_job: str | None = None
+
+
+class VerifyEmailRequest(BaseModel):
+    email: EmailStr
+    code: str
+
+
+class ResendVerificationRequest(BaseModel):
+    email: EmailStr
 
 
 class UserLogOut(BaseModel):

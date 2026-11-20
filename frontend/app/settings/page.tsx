@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useClerk } from "@clerk/nextjs";
 import { Moon, Bell, Shield, User, Save, Trash2, AlertTriangle } from "lucide-react";
 import { getMe, updateMe, deleteAccount } from "@/lib/api";
 
@@ -30,7 +29,6 @@ function ToggleSwitch({ enabled, onToggle }: { enabled: boolean; onToggle: () =>
 }
 
 export default function SettingsPage() {
-  const { signOut } = useClerk();
   const [darkMode, setDarkMode] = useState(true);
   const [emailAlerts, setEmailAlerts] = useState(true);
   const [weeklyReport, setWeeklyReport] = useState(false);
@@ -71,14 +69,10 @@ export default function SettingsPage() {
     setDeleting(true);
     try {
       await deleteAccount();
+      window.location.href = "/login";
     } catch {
       setDeleting(false);
-      return;
     }
-    // The backend already deleted the Clerk user, so the session may be gone.
-    await signOut({ redirectUrl: "/" }).catch(() => {
-      window.location.href = "/";
-    });
   };
 
   const handleSave = async () => {
@@ -139,9 +133,8 @@ export default function SettingsPage() {
                 <label className="text-xs font-medium text-muted-foreground">Email</label>
                 <Input
                   value={email}
-                  readOnly
-                  title="Change your email under Account & Security in the profile menu"
-                  className="h-9 text-sm bg-muted/40 border-border text-muted-foreground cursor-not-allowed"
+                  onChange={(e) => setEmail(e.target.value)}
+                  className="h-9 text-sm bg-muted/40 border-border focus:border-primary/50"
                 />
               </div>
               <div className="space-y-1.5">
